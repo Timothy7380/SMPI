@@ -221,3 +221,86 @@ canvas { display:block; }
   .g4,.g7{grid-template-columns:1fr 1fr;}
   .g3,.g2,.g32,.g23{grid-template-columns:1fr;}
 }
+
+/* ═══ LOGIN SCREEN ═══ */
+#loginScreen {
+  position: fixed; inset: 0;
+  background: linear-gradient(135deg, #dde8f8 0%, #eef3fb 100%);
+  z-index: 99999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.login-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(15,23,42,0.15);
+  padding: 40px;
+  width: 420px;
+  max-width: 100%;
+}
+.login-logo-wrap { display:flex; justify-content:center; margin-bottom: 6px; }
+.login-logo-clip { width:190px; height:48px; position:relative; overflow:hidden; }
+.login-logo-clip img { position:absolute; width:190px; height:auto; top:50%; left:0; transform:translateY(-50%); }
+.login-title { text-align:center; font-size:19px; font-weight:800; color:var(--navy); margin: 14px 0 2px; letter-spacing:-0.3px; }
+.login-sub { text-align:center; font-size:12.5px; color:var(--sub); margin-bottom: 26px; }
+.login-field { margin-bottom: 14px; }
+.login-field label { display:block; font-size:10px; font-weight:700; color:var(--sub); margin-bottom:6px; letter-spacing:.4px; text-transform:uppercase; }
+.login-field input {
+  width:100%; padding:12px 14px; border:1.5px solid var(--border); border-radius:var(--radius-sm);
+  font-size:14px; font-family:'Inter',sans-serif; color:var(--navy); outline:none; transition:border .15s;
+}
+.login-field input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(40,120,200,.12); }
+.login-error {
+  background: var(--red-bg); color: var(--red); font-size:12.5px; font-weight:500;
+  padding:10px 14px; border-radius:var(--radius-sm); margin-bottom:14px; display:none;
+}
+.login-error.show { display:block; }
+.login-btn {
+  width:100%; padding:13px; background:var(--blue); color:#fff; border:none;
+  border-radius:var(--radius-sm); font-size:14px; font-weight:700; cursor:pointer;
+  font-family:'Inter',sans-serif; transition:all .15s; box-shadow:0 2px 8px rgba(40,120,200,.3);
+  margin-top: 6px;
+}
+.login-btn:hover { background:#1a66b8; }
+.login-hint {
+  margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);
+  font-size: 11.5px; color: var(--sub2); line-height:1.7;
+}
+.login-hint strong { color: var(--sub); }
+
+/* Role badge in sidebar */
+.role-badge {
+  font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  letter-spacing: .4px; text-transform: uppercase;
+}
+.role-badge.admin { background: var(--purple-bg); color: var(--purple); }
+.role-badge.manager { background: var(--blue-light); color: var(--blue); }
+
+.logout-link {
+  display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--sub2);
+  cursor:pointer; margin-top:8px; padding: 4px 2px; transition: color .15s;
+}
+.logout-link:hover { color: var(--red); }
+.logout-link svg { width:13px; height:13px; stroke:currentColor; stroke-width:2; fill:none; }
+
+body.app-hidden #appRoot { display: none; }
+
+
+.sidebar-close-btn {
+  display: none;
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: var(--bg);
+  align-items: center; justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background .15s;
+}
+.sidebar-close-btn:hover { background: var(--blue-light); }
+.sidebar-close-btn svg { width: 16px; height: 16px; stroke: var(--sub); stroke-width: 2.2; }
+.sidebar-close-btn:hover svg { stroke: var(--blue); }
+@media (max-width: 900px) {
+  .sidebar-close-btn { display: flex; }
+}
