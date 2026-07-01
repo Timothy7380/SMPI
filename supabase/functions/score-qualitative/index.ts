@@ -69,7 +69,10 @@ Respond with ONLY a JSON object in this exact shape, no other text:
         },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 300, temperature: 0.3 },
+          // thinkingBudget: 0 turns off Gemini 2.5 Flash's internal "thinking" pass —
+          // otherwise it silently burns the token budget on reasoning before it ever
+          // writes the visible JSON answer, and the response comes back truncated.
+          generationConfig: { maxOutputTokens: 1024, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
         }),
       }
     );
