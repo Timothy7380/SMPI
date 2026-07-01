@@ -137,9 +137,12 @@ canvas { display:block; }
 .tab-pill:hover:not(.active){background:var(--blue-light);color:var(--blue);}
 
 /* TABLE */
-.sp-table{width:100%;border-collapse:collapse;font-size:13px;}
-.sp-table th{text-align:left;padding:9px 12px;font-size:10px;font-weight:600;color:var(--sub2);letter-spacing:.6px;text-transform:uppercase;border-bottom:1.5px solid var(--border);}
-.sp-table td{padding:11px 12px;border-bottom:1px solid var(--border);color:var(--navy);vertical-align:middle;}
+/* Cards containing a table scroll horizontally instead of spilling text
+   outside the card's rounded rectangle on narrow screens */
+.card:has(.sp-table){overflow-x:auto;}
+.sp-table{width:100%;min-width:640px;border-collapse:collapse;font-size:13px;}
+.sp-table th{text-align:left;padding:9px 12px;font-size:10px;font-weight:600;color:var(--sub2);letter-spacing:.6px;text-transform:uppercase;border-bottom:1.5px solid var(--border);white-space:nowrap;}
+.sp-table td{padding:11px 12px;border-bottom:1px solid var(--border);color:var(--navy);vertical-align:middle;white-space:nowrap;}
 .sp-table tr:last-child td{border-bottom:none;}
 .sp-table tr:hover td{background:#f8faff;}
 .sp-table td:first-child{font-weight:500;}
