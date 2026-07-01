@@ -414,6 +414,7 @@ async function refreshAllData() {
 
   renderLogTable();
   renderReportsTable();
+  renderPlatformTracker();
   renderSEOTable();
   renderLBTable();
   renderDashboardKPIs();
@@ -501,7 +502,7 @@ window.onload=()=>{
   // Leaderboard chart
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
-  renderLBTable(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderDashboardKPIs(); renderAIReview();
+  renderLBTable(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderDashboardKPIs(); renderAIReview();
 };
 
 function switchMainTab(btn,key){
@@ -646,6 +647,58 @@ function renderLogTable(){
 // Overall performance log — all 7 KPIs combined across platforms, per brand per week.
 function renderReportsTable(){
   document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${overallData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+}
+
+// Platform Log Tracker — groups the raw per-platform rows by the same
+// brand+week key used for the Overall aggregation, so managers/admin can see
+// exactly which platforms have been logged (and their individual numbers)
+// behind each week's Overall row on the Reports page.
+function renderPlatformTracker(){
+  const container = document.getElementById('platformTracker');
+  if (!container) return;
+
+  const ALL_PLATFORMS = ['Facebook','Instagram','Twitter/X','LinkedIn'];
+  const groups = {};
+  logData.forEach(r => {
+    const key = r.brand + '||' + r.wk;
+    if (!groups[key]) groups[key] = { brand: r.brand, wk: r.wk, mgr: r.mgr, rows: [], latestCreatedAt: r.createdAt || 0 };
+    groups[key].rows.push(r);
+    if (r.createdAt && new Date(r.createdAt) > new Date(groups[key].latestCreatedAt || 0)) groups[key].latestCreatedAt = r.createdAt;
+  });
+
+  const groupList = Object.values(groups).sort((a,b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
+
+  if (!groupList.length) {
+    container.innerHTML = `<div style="padding:20px;color:var(--sub2);font-size:13px">No weeks logged yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = groupList.map(g => {
+    const overall = overallData.find(o => o.brand === g.brand && o.wk === g.wk);
+    const loggedPlatforms = new Set(g.rows.map(r => r.plat));
+    const platformPills = ALL_PLATFORMS.map(p => {
+      const done = loggedPlatforms.has(p);
+      return `<span class="pill ${done?'pill-met':'pill-miss'}" style="margin-right:4px">${done?'✓':'✗'} ${p}</span>`;
+    }).join('');
+    const extraPlatforms = [...loggedPlatforms].filter(p => !ALL_PLATFORMS.includes(p));
+    const extraPills = extraPlatforms.map(p => `<span class="pill pill-blue" style="margin-right:4px">✓ ${p}</span>`).join('');
+
+    return `
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+          <div>
+            <span style="font-weight:800;font-size:14px;color:var(--navy)">${g.wk}</span>
+            <span class="pill pill-blue" style="margin-left:8px">${g.brand}</span>
+            <span style="color:var(--sub2);font-size:12px;margin-left:6px">${g.mgr}</span>
+          </div>
+          <div>${overall ? `<span style="font-weight:800;font-size:15px">${overall.score}</span> <span style="font-weight:700;color:${overall.score>=80?'var(--green)':overall.score>=70?'var(--amber)':'var(--red)'}">${overall.grade}</span>` : ''}</div>
+        </div>
+        <div style="margin-bottom:10px">${platformPills}${extraPills}</div>
+        <table class="sp-table"><thead><tr><th>Platform</th><th>Likes</th><th>Comments</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>
+          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}
+        </tbody></table>
+      </div>`;
+  }).join('');
 }
 
 function showPage(id,nav){
