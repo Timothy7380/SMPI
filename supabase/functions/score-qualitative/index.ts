@@ -1,19 +1,22 @@
 // score-qualitative
 //
 // Scores a brand's weekly Branding / Target Audience / Communication notes
-// using Claude, then writes the scores straight into the weekly_qualitative
-// table. Called from the app whenever a manager submits qualitative notes
-// without also typing a manual 0-100 score.
+// using Google's Gemini API (free tier — no credit card required, get a key
+// at aistudio.google.com), then writes the scores straight into the
+// weekly_qualitative table. Called from the app whenever a manager submits
+// qualitative notes without also typing a manual 0-100 score.
 //
 // Deploy: supabase functions deploy score-qualitative --no-verify-jwt
-// Secret: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+// Secret: supabase secrets set GEMINI_API_KEY=...
+//   (get a free key at https://aistudio.google.com/apikey — no billing setup)
 //
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically by
 // Supabase into every Edge Function — no need to set those as secrets.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+const GEMINI_MODEL = 'gemini-2.5-flash'; // free-tier eligible; swap here if Google renames/retires it
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -28,8 +31,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    if (!ANTHROPIC_API_KEY) {
-      return json({ error: 'ANTHROPIC_API_KEY secret is not set on this project.' }, 500);
+    if (!GEMINI_API_KEY) {
+      return json({ error: 'GEMINI_API_KEY secret is not set on this project.' }, 500);
     }
 
     const { brand, weekLabel, weekEnding, brandNotes, audienceNotes, commNotes } = await req.json();
@@ -56,19 +59,20 @@ Notes: "${(commNotes || 'No notes provided.').replace(/"/g, "'")}"
 Respond with ONLY a JSON object in this exact shape, no other text:
 {"brandingScore": <0-100 integer>, "audienceScore": <0-100 integer>, "commScore": <0-100 integer>, "reasoning": "<one sentence summary>"}`;
 
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 300,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 300, temperature: 0.3 },
+        }),
+      }
+    );
 
     if (!aiRes.ok) {
       const errText = await aiRes.text();
@@ -76,7 +80,7 @@ Respond with ONLY a JSON object in this exact shape, no other text:
     }
 
     const aiData = await aiRes.json();
-    const rawText = aiData.content?.[0]?.text || '';
+    const rawText = aiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const match = rawText.match(/\{[\s\S]*\}/);
     if (!match) {
       return json({ error: 'AI response was not valid JSON', raw: rawText }, 502);
