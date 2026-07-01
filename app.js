@@ -1,3 +1,246 @@
+// ═══ SUPABASE CONFIG ═══
+const SUPABASE_URL = 'https://cmbxrsxvzcezvubbwdpb.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtYnhyc3h2emNlenZ1YmJ3ZHBiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NzQ4MDksImV4cCI6MjA5ODM1MDgwOX0.JjZ0WASnuCOWPFJzHx7YETe3y9b1Lkx2HCYooDJoeOY';
+
+async function sbFetch(path, options = {}) {
+  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  const headers = {
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Supabase error ${res.status}: ${errText}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// Fetch all weekly logs from Supabase, newest first
+async function fetchWeeklyLogs() {
+  try {
+    const rows = await sbFetch('weekly_logs?select=*&order=created_at.desc', {
+      headers: { 'Prefer': 'return=representation' }
+    });
+    return rows || [];
+  } catch (e) {
+    console.error('Failed to fetch weekly logs:', e);
+    return null; // null signals failure so caller can fall back to local sample data
+  }
+}
+
+// Insert a new weekly log row into Supabase
+async function insertWeeklyLog(entry) {
+  return sbFetch('weekly_logs', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify(entry)
+  });
+}
+
+// Update an existing weekly log row in Supabase (used when a second platform
+// is logged for a week that's already been submitted, so we merge into one
+// row instead of creating a duplicate "next week")
+async function updateWeeklyLog(id, fields) {
+  return sbFetch(`weekly_logs?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify(fields)
+  });
+}
+
+// ═══ SCORING ALGORITHM ═══
+// Weekly targets, matching the numbers already shown in the KPI cards/Settings page.
+const KPI_TARGETS = { engagement: 600, leads: 40, followers: 400 };
+
+// Turns a "Week Ending" date into a stable label so that logging multiple
+// platforms for the same real week produces the SAME week, instead of a
+// fresh "Wk N" every time someone hits submit.
+function getWeekLabel(dateStr) {
+  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+  return 'Wk of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Composite score from the quantifiable KPIs this form actually collects
+// (Engagement 20%, Leads 25%, Followers 10% = 55% of the full weighting
+// model). Rescaled to a 0-100 scale since SEO/Branding/Audience/Communication
+// (the remaining 45%) are AI/manually scored elsewhere and aren't part of
+// this form yet.
+function calcScore({ likes = 0, comments = 0, reposts = 0, followers = 0, leads = 0 }) {
+  const engScore = Math.min((likes + comments + reposts) / KPI_TARGETS.engagement * 100, 100);
+  const leadsScore = Math.min(leads / KPI_TARGETS.leads * 100, 100);
+  const followersScore = Math.min(followers / KPI_TARGETS.followers * 100, 100);
+  const weighted = (engScore * 20 + leadsScore * 25 + followersScore * 10) / 55;
+  return Math.round(weighted);
+}
+
+// Matches the grade scale shown on the Leaderboard page (A+ 90-100, A 80-89,
+// B+ 75-79, B 65-74, C 50-64, D below 50).
+function gradeFor(score) {
+  if (score >= 90) return 'A+';
+  if (score >= 80) return 'A';
+  if (score >= 75) return 'B+';
+  if (score >= 65) return 'B';
+  if (score >= 50) return 'C';
+  return 'D';
+}
+
+// Map a Supabase row (snake_case columns) to the app's internal logData shape
+function mapRowToLogEntry(row) {
+  return {
+    wk: row.week_label,
+    mgr: row.manager,
+    brand: row.brand,
+    plat: 'All',
+    likes: row.likes || 0,
+    comments: row.comments || 0,
+    reposts: row.reposts || 0,
+    followers: row.followers || 0,
+    leads: row.leads || 0,
+    score: row.score || 0,
+    grade: row.grade || '—',
+    _id: row.id
+  };
+}
+
+// ═══ AUTH SYSTEM ═══
+const ACCOUNTS = {
+  admin:       { password: 'admin123',  role: 'admin',   name: 'Super Admin',         brand: null,               avatar:'SA', roleLabel:'Admin' },
+  malik:       { password: 'malik123',  role: 'manager', name: 'Malik Okunlaya',      brand: 'GeoInfotech',      avatar:'MO', roleLabel:'Manager' },
+  boluwatife:  { password: 'bolu123',   role: 'manager', name: 'Boluwatife Olu-Ajayi',brand: 'Geoinfo Academy',  avatar:'BO', roleLabel:'Manager' },
+  peter:       { password: 'peter123',  role: 'manager', name: 'Peter Sylvester',     brand: 'Geostore',         avatar:'PS', roleLabel:'Manager' },
+};
+
+let currentUser = null;
+
+function doLogin() {
+  const u = document.getElementById('loginUser').value.trim().toLowerCase();
+  const p = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginError');
+  const acct = ACCOUNTS[u];
+
+  if (!acct || acct.password !== p) {
+    errEl.textContent = 'Incorrect username or password.';
+    errEl.classList.add('show');
+    document.getElementById('loginPass').value = '';
+    return;
+  }
+
+  errEl.classList.remove('show');
+  currentUser = { username: u, ...acct };
+  sessionStorage.setItem('smpis_user', u); // persists for this tab session only
+
+  applyRole(currentUser);
+
+  document.body.classList.remove('app-hidden');
+  document.getElementById('loginScreen').style.display = 'none';
+}
+
+function doLogout() {
+  currentUser = null;
+  sessionStorage.removeItem('smpis_user');
+  document.body.classList.add('app-hidden');
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginPass').value = '';
+  document.getElementById('loginUser').focus();
+}
+
+function applyRole(user) {
+  // Update sidebar user pill
+  const userPill = document.querySelector('.user-pill');
+  if (userPill) {
+    userPill.innerHTML = `
+      <div class="u-avatar">${user.avatar}</div>
+      <div style="flex:1">
+        <div class="u-name" style="display:flex;align-items:center;gap:6px">${user.name} <span class="role-badge ${user.role}">${user.roleLabel}</span></div>
+        <div class="u-role">${user.brand ? user.brand : 'All Branches'}</div>
+        <div class="logout-link" onclick="doLogout()">
+          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign out
+        </div>
+      </div>`;
+  }
+
+  if (user.role === 'admin') {
+    // Admin sees everything — brand switcher visible, all nav items visible
+    document.querySelectorAll('.brand-switcher, .nav-item, .bpill').forEach(el => el.style.display = '');
+    document.getElementById('page-leaderboard') && (document.querySelector('[onclick*="leaderboard"]').style.display = '');
+    showPage('dashboard', document.querySelector('.nav-item.active') || document.querySelector('.nav-item'));
+  } else {
+    // Manager: lock to their own brand, hide brand switcher, hide leaderboard nav
+    const switcher = document.querySelector('.brand-switcher');
+    if (switcher) switcher.style.display = 'none';
+
+    document.querySelectorAll('.nav-item').forEach(item => {
+      if (item.getAttribute('onclick') && item.getAttribute('onclick').includes('leaderboard')) {
+        item.style.display = 'none';
+      }
+    });
+
+    // Update header subtitle to reflect locked brand
+    document.querySelectorAll('.hc-sub').forEach(el => {
+      if (el.textContent.includes('GeoInfotech') || el.textContent.includes('Weekly KPI')) {
+        el.textContent = el.textContent.replace(/^[^·]+·/, user.brand + ' ·');
+      }
+    });
+
+    showPage('dashboard', document.querySelector('.nav-item'));
+  }
+
+  // Load real data from Supabase once the user is in
+  loadRealData();
+}
+
+let refreshTimer = null;
+
+async function loadRealData() {
+  const rows = await fetchWeeklyLogs();
+  if (rows === null) {
+    // Fetch failed (offline, bad keys, etc) — keep the existing sample/local data
+    showToast('Offline — showing local data');
+    return;
+  }
+  if (rows.length > 0) {
+    logData = rows.map(mapRowToLogEntry);
+  }
+  // If a manager, only show their own brand's rows
+  if (currentUser && currentUser.role === 'manager') {
+    logData = logData.filter(r => r.brand === currentUser.brand);
+  }
+  renderLogTable();
+  renderReportsTable();
+
+  // Poll every 20s so Admin sees new manager submissions without refreshing
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(async () => {
+    const fresh = await fetchWeeklyLogs();
+    if (fresh === null) return;
+    let data = fresh.map(mapRowToLogEntry);
+    if (currentUser && currentUser.role === 'manager') {
+      data = data.filter(r => r.brand === currentUser.brand);
+    }
+    logData = data;
+    renderLogTable();
+    renderReportsTable();
+  }, 20000);
+}
+
+// Check for existing session (tab refresh)
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = sessionStorage.getItem('smpis_user');
+  if (saved && ACCOUNTS[saved]) {
+    currentUser = { username: saved, ...ACCOUNTS[saved] };
+    document.body.classList.remove('app-hidden');
+    document.getElementById('loginScreen').style.display = 'none';
+    // Wait for window.onload (charts) before applying role
+    setTimeout(() => applyRole(currentUser), 50);
+  }
+});
+
 const W=['Wk1','Wk2','Wk3','Wk4','Wk5','Wk6','Wk7','Wk8'];
 const tt={backgroundColor:'#0f172a',titleColor:'#fff',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.07)',borderWidth:1,padding:10,cornerRadius:10};
 const gr={color:'rgba(0,0,0,0.04)'};
@@ -113,7 +356,10 @@ function renderLogTable(){
 }
 
 function renderReportsTable(){
-  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>44%</td><td>91</td><td>80</td><td>88</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  // SEO/Branding/Audience/Comm aren't collected by the weekly log form (they're
+  // AI/manually scored elsewhere), so they show as "—" per row instead of a
+  // fake identical number for every week.
+  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>—</td><td>—</td><td>—</td><td>—</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
 }
 
 function showPage(id,nav){
@@ -130,10 +376,81 @@ function setLBPeriod(btn,p){document.querySelectorAll('.tab-pill').forEach(t=>t.
 function selKPI(card,k){document.querySelectorAll('#page-dashboard .stat-card').forEach(c=>c.classList.remove('sel'));card.classList.add('sel');}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
-function submitLog(){
-  const selBrand = document.querySelector('#logModal select:nth-child(1)') ? document.querySelector('#logModal select').value.replace(/ \(.*\)/,'') : 'GeoInfotech';
-  logData.unshift({wk:'Wk 9',mgr:brandManagers[selBrand]||'Unknown',brand:selBrand,plat:'All',likes:+document.getElementById('lgLikes').value||0,comments:+document.getElementById('lgComments').value||0,reposts:+document.getElementById('lgReposts').value||0,followers:+document.getElementById('lgFollowers').value||0,leads:+document.getElementById('lgLeads').value||0,score:0,grade:'—'});
-  renderLogTable();closeModal('logModal');showToast('Week submitted successfully');
+async function submitLog(){
+  const brandSelectEl = document.querySelector('#logModal select');
+  const selBrand = brandSelectEl ? brandSelectEl.value.replace(/ \(.*\)/,'') : (currentUser && currentUser.brand) || 'GeoInfotech';
+  const mgrName = brandManagers[selBrand] || (currentUser ? currentUser.name : 'Unknown');
+
+  const platformEl = document.getElementById('lgPlatform');
+  const platform = platformEl ? platformEl.value : 'All Platforms';
+  const weekEndEl = document.getElementById('lgWeekEnd');
+  const weekLabel = getWeekLabel(weekEndEl ? weekEndEl.value : '');
+
+  const newLikes = +document.getElementById('lgLikes').value || 0;
+  const newComments = +document.getElementById('lgComments').value || 0;
+  const newReposts = +document.getElementById('lgReposts').value || 0;
+  const newFollowers = +document.getElementById('lgFollowers').value || 0;
+  const newLeads = +document.getElementById('lgLeads').value || 0;
+  const commNotes = document.querySelectorAll('#logModal textarea')[0] ? document.querySelectorAll('#logModal textarea')[0].value : '';
+  const brandNotes = document.querySelectorAll('#logModal textarea')[1] ? document.querySelectorAll('#logModal textarea')[1].value : '';
+
+  // If this brand already has a row for this week (e.g. Facebook was logged
+  // earlier), fold this platform's numbers into that same row instead of
+  // creating a new "next week" entry.
+  const existing = logData.find(r => r.brand === selBrand && r.wk === weekLabel);
+
+  const submitBtn = document.querySelector('#logModal .btn-blue');
+  const originalText = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) { submitBtn.textContent = 'Saving...'; submitBtn.disabled = true; }
+
+  try {
+    if (existing) {
+      const merged = {
+        likes: existing.likes + newLikes,
+        comments: existing.comments + newComments,
+        reposts: existing.reposts + newReposts,
+        followers: existing.followers + newFollowers,
+        leads: existing.leads + newLeads
+      };
+      merged.score = calcScore(merged);
+      merged.grade = gradeFor(merged.score);
+
+      if (existing._id) {
+        await updateWeeklyLog(existing._id, merged);
+      }
+      Object.assign(existing, merged);
+    } else {
+      const score = calcScore({ likes: newLikes, comments: newComments, reposts: newReposts, followers: newFollowers, leads: newLeads });
+      const entry = {
+        week_label: weekLabel,
+        manager: mgrName,
+        brand: selBrand,
+        likes: newLikes,
+        comments: newComments,
+        reposts: newReposts,
+        followers: newFollowers,
+        leads: newLeads,
+        comm_notes: commNotes,
+        brand_notes: brandNotes,
+        score,
+        grade: gradeFor(score)
+      };
+      const saved = await insertWeeklyLog(entry);
+      const newRow = (saved && saved[0]) ? mapRowToLogEntry(saved[0]) : mapRowToLogEntry({...entry, week_label: weekLabel});
+      logData.unshift(newRow);
+    }
+    renderLogTable();
+    renderReportsTable();
+    closeModal('logModal');
+    showToast(existing ? `${platform} data added to ${weekLabel}` : `${weekLabel} submitted and synced`);
+    ['lgLikes','lgComments','lgReposts','lgFollowers','lgLeads'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    if (weekEndEl) weekEndEl.value = '';
+  } catch (e) {
+    console.error(e);
+    showToast('Could not sync — check connection');
+  } finally {
+    if (submitBtn) { submitBtn.textContent = originalText; submitBtn.disabled = false; }
+  }
 }
 function submitSEO(){
   seoData.unshift({title:document.getElementById('seoTitle').value||'New Post',keyword:document.getElementById('seoKw').value||'—',cat:document.getElementById('seoCat').value,date:'Jun 29',rank:document.getElementById('seoRank').value,verified:'Pending'});
