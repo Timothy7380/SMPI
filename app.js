@@ -165,6 +165,20 @@ function applyRole(user) {
       </div>`;
   }
 
+  // Lock the Log Week modal's Brand dropdown to the manager's own brand so
+  // they can't accidentally submit data under a different brand. Admin gets
+  // the full dropdown back.
+  const lgBrandSelect = document.getElementById('lgBrand');
+  if (lgBrandSelect) {
+    if (user.role === 'manager') {
+      const ownOption = Array.from(lgBrandSelect.options).find(o => o.value.startsWith(user.brand + ' ('));
+      if (ownOption) lgBrandSelect.value = ownOption.value;
+      lgBrandSelect.disabled = true;
+    } else {
+      lgBrandSelect.disabled = false;
+    }
+  }
+
   if (user.role === 'admin') {
     // Admin sees everything — brand switcher visible, all nav items visible
     document.querySelectorAll('.brand-switcher, .nav-item, .bpill').forEach(el => el.style.display = '');
@@ -377,7 +391,7 @@ function selKPI(card,k){document.querySelectorAll('#page-dashboard .stat-card').
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 async function submitLog(){
-  const brandSelectEl = document.querySelector('#logModal select');
+  const brandSelectEl = document.getElementById('lgBrand');
   const selBrand = brandSelectEl ? brandSelectEl.value.replace(/ \(.*\)/,'') : (currentUser && currentUser.brand) || 'GeoInfotech';
   const mgrName = brandManagers[selBrand] || (currentUser ? currentUser.name : 'Unknown');
 
