@@ -596,7 +596,7 @@ function renderDashboardKPIs(){
   if (overallNum) overallNum.textContent=row.score;
   if (window.scoreDonutObj){ window.scoreDonutObj.data.datasets[0].data=[row.score,100-row.score]; window.scoreDonutObj.update(); }
 
-  setStatCard('#page-dashboard','Engagement',row.likes.toLocaleString());
+  setStatCard('#page-dashboard','Engagement',(row.likes+row.comments+row.reposts).toLocaleString());
   setStatCard('#page-dashboard','Leads Generated',row.leads);
   setStatCard('#page-dashboard','Follower Growth',row.followers);
   setStatCard('#page-dashboard','SEO Performance',row.seoScore!=null?row.seoScore+'%':'—');
@@ -641,12 +641,12 @@ function renderLogTable(){
   const t=document.getElementById('engLogTable');
   // Ensure manager name is always correct for brand
   logData.forEach(r => { if(brandManagers[r.brand]) r.mgr = brandManagers[r.brand]; });
-  t.innerHTML=`<thead><tr><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Likes</th><th>Comments</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  t.innerHTML=`<thead><tr><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.reposts}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
 }
 
 // Overall performance log — all 7 KPIs combined across platforms, per brand per week.
 function renderReportsTable(){
-  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${overallData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${overallData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${(r.likes+r.comments+r.reposts).toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
 }
 
 // Platform Log Tracker — groups the raw per-platform rows by the same
@@ -694,8 +694,8 @@ function renderPlatformTracker(){
           <div>${overall ? `<span style="font-weight:800;font-size:15px">${overall.score}</span> <span style="font-weight:700;color:${overall.score>=80?'var(--green)':overall.score>=70?'var(--amber)':'var(--red)'}">${overall.grade}</span>` : ''}</div>
         </div>
         <div style="margin-bottom:10px">${platformPills}${extraPills}</div>
-        <table class="sp-table"><thead><tr><th>Platform</th><th>Likes</th><th>Comments</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>
-          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}
+        <table class="sp-table"><thead><tr><th>Platform</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>
+          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.reposts}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}
         </tbody></table>
       </div>`;
   }).join('');
