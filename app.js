@@ -691,7 +691,7 @@ function renderPlatformTracker(){
             <span class="pill pill-blue" style="margin-left:8px">${g.brand}</span>
             <span style="color:var(--sub2);font-size:12px;margin-left:6px">${g.mgr}</span>
           </div>
-          <div>${overall ? `<span style="font-weight:800;font-size:15px">${overall.score}</span> <span style="font-weight:700;color:${overall.score>=80?'var(--green)':overall.score>=70?'var(--amber)':'var(--red)'}">${overall.grade}</span>` : ''}</div>
+          <div style="text-align:right">${overall ? `<div style="font-size:10px;color:var(--sub2);text-transform:uppercase;letter-spacing:.4px">Week's Overall Score</div><span style="font-weight:800;font-size:15px">${overall.score}</span> <span style="font-weight:700;color:${overall.score>=80?'var(--green)':overall.score>=70?'var(--amber)':'var(--red)'}">${overall.grade}</span>` : ''}</div>
         </div>
         <div style="margin-bottom:10px">${platformPills}${extraPills}</div>
         <table class="sp-table"><thead><tr><th>Platform</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>
