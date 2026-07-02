@@ -417,7 +417,6 @@ async function refreshAllData() {
   renderPlatformTracker();
   renderSEOTable();
   renderLBTable();
-  renderMiniLeaderboard();
   renderDashboardKPIs();
   renderAIReview();
 }
@@ -503,7 +502,7 @@ window.onload=()=>{
   // Leaderboard chart
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
-  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderDashboardKPIs(); renderAIReview();
+  renderLBTable(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderDashboardKPIs(); renderAIReview();
 };
 
 function switchMainTab(btn,key){
@@ -532,36 +531,6 @@ function renderLBTable(){
     window.lbChartObj.data.datasets[0].data = lbs.map(r=>r.s ?? 0);
     window.lbChartObj.update();
   }
-}
-
-// Dashboard's "Top Managers" mini leaderboard — same real ranking as the full
-// Leaderboard page (latestOverallForBrand per brand, sorted by score
-// descending), just rendered as the smaller gold/silver/bronze row list
-// instead of a table. Was previously static hardcoded HTML.
-function renderMiniLeaderboard(){
-  const list = document.getElementById('miniLbList');
-  if (!list) return;
-
-  const brands=[
-    {name:'GeoInfotech', mgr:'Malik Okunlaya', av:'MO', c:'#f59e0b'},
-    {name:'Geoinfo Academy', mgr:'Boluwatife Olu-Ajayi', av:'BO', c:'#2878C8'},
-    {name:'Geostore', mgr:'Peter Sylvester', av:'PS', c:'#0d9488'}
-  ];
-  const lbs=brands.map(b=>{
-    const row=latestOverallForBrand(b.name);
-    return {n:b.mgr,b:b.name,s:row?row.score:null,g:row?row.grade:'—',av:b.av,c:b.c};
-  }).sort((a,z)=>(z.s??-1)-(a.s??-1));
-
-  const gc=s=>s==null?'var(--sub2)':s>=80?'var(--green)':s>=70?'var(--amber)':'var(--red)';
-  const rankClass=i=>i===0?'gold':i===1?'silver':i===2?'bronze':'';
-
-  list.innerHTML = lbs.map((r,i)=>`
-    <div class="lb-row">
-      <div class="lb-rank ${rankClass(i)}">${i+1}</div>
-      <div class="lb-avatar" style="background:${r.c}">${r.av}</div>
-      <div class="lb-info"><div class="lb-name">${r.n}</div><div class="lb-brand">${r.b}</div></div>
-      <div style="text-align:right"><div class="lb-score">${r.s!=null?r.s:'—'}</div><div class="lb-grade" style="color:${gc(r.s)}">${r.g}</div></div>
-    </div>`).join('');
 }
 
 function renderSEOTable(){
