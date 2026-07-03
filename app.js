@@ -206,6 +206,20 @@ function getEngagementAndFollowers(platform, v) {
 const TOTAL_FOLLOWERS_LABEL = { 'Facebook': 'Total Followers', 'LinkedIn': 'Total Followers', 'Twitter': 'Total Followers', 'TikTok': 'Followers', 'Instagram': 'Followers', 'YouTube': 'Subscribers' };
 const IMPRESSIONS_LABEL = { 'Facebook': 'Views', 'LinkedIn': 'Impressions', 'Twitter': 'Impressions', 'TikTok': 'Views', 'Instagram': 'Views', 'YouTube': 'Impressions' };
 
+// One distinct color per platform, reused across every Platform Totals /
+// Trend Analysis chart and insight card so the whole report stays visually
+// consistent. Hex values match this app's own CSS variables (--blue, --teal,
+// --purple, --pink, --amber, --red) rather than an unrelated palette, so the
+// charts blend with the rest of SMPIS instead of looking bolted on.
+const PLATFORM_COLORS = {
+  'Facebook':  { hex: '#2878C8', bgVar: 'var(--blue-light)',  textVar: 'var(--blue)' },
+  'LinkedIn':  { hex: '#0d9488', bgVar: 'var(--teal-bg)',     textVar: 'var(--teal)' },
+  'Twitter':   { hex: '#7c3aed', bgVar: 'var(--purple-bg)',   textVar: 'var(--purple)' },
+  'TikTok':    { hex: '#db2777', bgVar: 'var(--pink-bg)',     textVar: 'var(--pink)' },
+  'Instagram': { hex: '#d97706', bgVar: 'var(--amber-bg)',    textVar: 'var(--amber)' },
+  'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' }
+};
+
 // Formats a stored raw_metrics object (keyed by human-readable label, e.g.
 // {"Views": 4663, "Shares": 26}) into a compact "Label: value · Label: value"
 // string for table "Details" columns. Skips zero/blank values to stay short.
@@ -565,6 +579,7 @@ async function refreshAllData() {
   renderReportsTable();
   renderPlatformTracker();
   renderPlatformTotalsCharts();
+  renderTrendAnalysis();
   renderSEOTable();
   renderLBTable();
   renderMiniLeaderboard();
@@ -653,7 +668,7 @@ window.onload=()=>{
   // Leaderboard chart
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
-  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderPlatformTotalsCharts(); renderDashboardKPIs(); renderAIReview();
+  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderPlatformTotalsCharts(); renderTrendAnalysis(); renderDashboardKPIs(); renderAIReview();
   onLgPlatformChange();
 };
 
@@ -932,6 +947,127 @@ function renderPlatformTotalsCharts() {
   upsertHBarChart('platTotalFollowersChart', 'platTotalFollowersChartObj', PLATFORM_TOTALS_ORDER, totalFollowers, 'Total Followers');
   upsertHBarChart('platImpressionsChart', 'platImpressionsChartObj', PLATFORM_TOTALS_ORDER, impressions, 'Impressions');
   upsertHBarChart('platLeadsChart', 'platLeadsChartObj', PLATFORM_TOTALS_ORDER, leads, 'Leads');
+}
+
+// ═══ TREND ANALYSIS (Reports page) ═══
+// Multi-week comparisons across platforms — Total Followers, New Followers,
+// and Views/Impressions — each as a grouped bar chart (weeks left-to-right,
+// one colored series per platform) plus an auto-generated Highlights panel
+// and a week-by-week detail table. Everything here reads live logData, the
+// same rows the rest of the Reports page already uses.
+
+// Groups every logged row by its week label, sorts those weeks chronologically
+// (oldest → newest) using whichever date is available, keeps only the most
+// recent maxWeeks of them, then sums valueFn(row) per platform per week.
+// Rows for the same platform+week from different brands are summed (this is
+// a company-wide view across all brands, not a single-brand snapshot).
+function buildWeeklyPlatformSeries(valueFn, maxWeeks = 6) {
+  const weekDate = {};
+  logData.forEach(r => {
+    if (!(r.wk in weekDate)) weekDate[r.wk] = r.weekEnding || r.weekStart || null;
+    else if (!weekDate[r.wk] && (r.weekEnding || r.weekStart)) weekDate[r.wk] = r.weekEnding || r.weekStart;
+  });
+  let weekKeys = Object.keys(weekDate);
+  weekKeys.sort((a, b) => new Date(weekDate[a] || 0) - new Date(weekDate[b] || 0));
+  if (weekKeys.length > maxWeeks) weekKeys = weekKeys.slice(weekKeys.length - maxWeeks);
+
+  const series = {};
+  PLATFORM_TOTALS_ORDER.forEach(p => { series[p] = weekKeys.map(() => 0); });
+  logData.forEach(r => {
+    const wi = weekKeys.indexOf(r.wk);
+    if (wi === -1 || !series[r.plat]) return;
+    series[r.plat][wi] += valueFn(r) || 0;
+  });
+  return { weekLabels: weekKeys.map(wk => wk.replace('Wk of ', '')), series };
+}
+
+function renderTrendChart(canvasId, storeKey, weekLabels, series) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v > 0));
+  const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28 }));
+  if (window[storeKey]) {
+    window[storeKey].data.labels = weekLabels;
+    window[storeKey].data.datasets = datasets;
+    window[storeKey].update();
+    return;
+  }
+  window[storeKey] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: weekLabels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 11, family: 'Inter' }, boxWidth: 10, padding: 12 } }, tooltip: tt },
+      scales: { x: { grid: { display: false }, ticks: ch }, y: { grid: gr, ticks: ch, beginAtZero: true } }
+    }
+  });
+}
+
+// Surfaces one card per platform that has ever logged data, sorted by the
+// size of its week-over-week swing (biggest movers first) so the panel reads
+// like a highlights feed rather than a flat alphabetical list.
+function renderTrendInsights(containerId, weekLabels, series, unit) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const n = weekLabels.length;
+  const items = [];
+  PLATFORM_TOTALS_ORDER.forEach(p => {
+    const vals = series[p];
+    if (!vals.some(v => v > 0)) return;
+    const latest = vals[n - 1] || 0;
+    let pct = null;
+    if (n >= 2 && vals[n - 2] > 0) pct = Math.round((latest - vals[n - 2]) / vals[n - 2] * 100);
+    items.push({ platform: p, latest, pct });
+  });
+  if (!items.length) {
+    container.innerHTML = `<div style="padding:8px 0;color:var(--sub2);font-size:12px">No data logged yet.</div>`;
+    return;
+  }
+  items.sort((a, b) => {
+    const am = a.pct == null ? -1 : Math.abs(a.pct), bm = b.pct == null ? -1 : Math.abs(b.pct);
+    return bm !== am ? bm - am : b.latest - a.latest;
+  });
+  const latestWeekLabel = weekLabels[n - 1] || 'This week';
+  container.innerHTML = items.map(it => {
+    const c = PLATFORM_COLORS[it.platform];
+    const sub = it.pct == null ? `${latestWeekLabel} · current`
+      : it.pct > 0 ? `${latestWeekLabel} · ▲ +${it.pct}% vs prior week`
+      : it.pct < 0 ? `${latestWeekLabel} · ▼ ${it.pct}% vs prior week`
+      : `${latestWeekLabel} · flat vs prior week`;
+    return `<div class="ai-box" style="background:${c.bgVar};border-left-color:${c.textVar}"><div class="ai-box-title" style="color:${c.textVar}">${it.platform}</div><div class="ai-box-body"><strong style="font-size:14px;color:var(--navy)">${it.latest.toLocaleString()}</strong> ${unit}<br>${sub}</div></div>`;
+  }).join('');
+}
+
+function renderTrendTable(tableId, weekLabels, series) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v > 0));
+  if (!platforms.length) {
+    table.innerHTML = `<tbody><tr><td style="padding:14px;color:var(--sub2);font-size:13px">No data logged yet.</td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = `<thead><tr><th>Platform</th>${weekLabels.map(w => `<th>${w}</th>`).join('')}</tr></thead><tbody>${platforms.map(p => `<tr><td><span class="pill pill-blue">${p}</span></td>${series[p].map(v => `<td>${v.toLocaleString()}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+function renderTrendAnalysis() {
+  const totalFollowersFn = r => (r.rawMetrics || {})[TOTAL_FOLLOWERS_LABEL[r.plat]] || 0;
+  const newFollowersFn = r => r.followers || 0;
+  const impressionsFn = r => (r.rawMetrics || {})[IMPRESSIONS_LABEL[r.plat]] || 0;
+
+  const tf = buildWeeklyPlatformSeries(totalFollowersFn);
+  renderTrendChart('trendTotalFollowersChart', 'trendTotalFollowersChartObj', tf.weekLabels, tf.series);
+  renderTrendInsights('trendTotalFollowersInsights', tf.weekLabels, tf.series, 'followers');
+  renderTrendTable('trendTotalFollowersTable', tf.weekLabels, tf.series);
+
+  const nf = buildWeeklyPlatformSeries(newFollowersFn);
+  renderTrendChart('trendNewFollowersChart', 'trendNewFollowersChartObj', nf.weekLabels, nf.series);
+  renderTrendInsights('trendNewFollowersInsights', nf.weekLabels, nf.series, 'new followers');
+  renderTrendTable('trendNewFollowersTable', nf.weekLabels, nf.series);
+
+  const im = buildWeeklyPlatformSeries(impressionsFn);
+  renderTrendChart('trendImpressionsChart', 'trendImpressionsChartObj', im.weekLabels, im.series);
+  renderTrendInsights('trendImpressionsInsights', im.weekLabels, im.series, 'views/impressions');
+  renderTrendTable('trendImpressionsTable', im.weekLabels, im.series);
 }
 
 function showPage(id,nav){
