@@ -456,9 +456,11 @@ function latestOverallForBrand(brand) {
 // Admin's brand-switcher pill selection (defaults to GeoInfotech, matching
 // the pill that's active by default in the sidebar)
 let selectedDashboardBrand = 'GeoInfotech';
+function currentDashboardBrand() {
+  return (currentUser && currentUser.role === 'manager') ? currentUser.brand : selectedDashboardBrand;
+}
 function getDashboardRow() {
-  const brand = (currentUser && currentUser.role === 'manager') ? currentUser.brand : selectedDashboardBrand;
-  return latestOverallForBrand(brand);
+  return latestOverallForBrand(currentDashboardBrand());
 }
 
 // ═══ AUTH SYSTEM ═══
@@ -601,6 +603,7 @@ async function refreshAllData() {
   renderPlatformTracker();
   renderPlatformTotalsCharts();
   renderTrendAnalysis();
+  renderAllKPIPages();
   renderSEOTable();
   renderLBTable();
   renderMiniLeaderboard();
@@ -648,56 +651,34 @@ window.onload=()=>{
     {label:'Engagement',data:[45,120,85,200,310,180,420,580],borderColor:'#2878C8',backgroundColor:'rgba(40,120,200,0.07)',fill:true,tension:0.4,pointRadius:3,borderWidth:2.5},
     {label:'Target',data:Array(8).fill(150),borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
   ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // AI hist
-  new Chart(document.getElementById('aiHistChart'),{type:'line',data:{labels:W,datasets:[
-    {label:'Score',data:[62,65,70,72,76,78,76,82],borderColor:'#2878C8',backgroundColor:'rgba(40,120,200,0.07)',fill:true,tension:0.4,pointRadius:3,borderWidth:2.5},
-    {label:'Target',data:Array(8).fill(80),borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
+  // AI hist — shell only; renderAIHistChart() fills it with real weekly
+  // composite score history for the current brand once data has loaded.
+  window.aiHistChartObj=new Chart(document.getElementById('aiHistChart'),{type:'line',data:{labels:[],datasets:[
+    {label:'Score',data:[],borderColor:'#2878C8',backgroundColor:'rgba(40,120,200,0.07)',fill:true,tension:0.4,pointRadius:3,borderWidth:2.5},
+    {label:'Target',data:[],borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
   ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // Brand radar
+  // Brand radar (AI Review page) — illustrative AI-narrative example, not
+  // backed by real per-component sub-scores (this app only collects one
+  // overall Branding score), left as-is intentionally.
   new Chart(document.getElementById('brandChart'),{type:'radar',data:{labels:['Visual','Tone','Quality','Relevance','Prestige','CTA'],datasets:[{label:'Brand Score',data:[94,88,91,85,93,80],borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,0.12)',borderWidth:2,pointBackgroundColor:'#7c3aed'}]},options:{responsive:true,scales:{r:{grid:{color:'rgba(0,0,0,0.06)'},pointLabels:{color:'#64748b',font:{size:11}},ticks:{display:false},suggestedMin:50,suggestedMax:100}},plugins:{legend:{display:false},tooltip:tt}}});
-  // Engagement
-  new Chart(document.getElementById('engChart'),{type:'line',data:{labels:W,datasets:[
-    {label:'Likes',data:[45,120,85,200,310,180,420,580],borderColor:'#2878C8',tension:0.4,pointRadius:3,borderWidth:2,fill:false},
-    {label:'Comments',data:[10,30,25,50,80,60,110,92],borderColor:'#16a34a',tension:0.4,pointRadius:3,borderWidth:2,fill:false},
-    {label:'Target',data:Array(8).fill(150),borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
-  ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // Engagement donut
-  new Chart(document.getElementById('engDonut'),{type:'doughnut',data:{labels:['Facebook','Instagram','Twitter','LinkedIn'],datasets:[{data:[624,814,204,200],backgroundColor:['#1877F2','#E1306C','#1DA1F2','#0A66C2'],borderWidth:0,hoverOffset:7}]},options:{cutout:'60%',plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{size:11,family:'Inter'},padding:12,boxWidth:10}},tooltip:tt}}});
-  // Leads
-  new Chart(document.getElementById('leadsChart'),{type:'line',data:{labels:W,datasets:[
-    {label:'Facebook',data:[2,4,3,6,8,5,10,9],borderColor:'#1877F2',tension:0.4,pointRadius:3,borderWidth:2,fill:false},
-    {label:'Instagram',data:[3,5,6,8,10,9,12,15],borderColor:'#E1306C',tension:0.4,pointRadius:3,borderWidth:2,fill:false},
-    {label:'LinkedIn',data:[4,6,5,9,11,10,13,14],borderColor:'#0A66C2',tension:0.4,pointRadius:3,borderWidth:2,fill:false},
-    {label:'Target',data:Array(8).fill(10),borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
-  ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // Audience
-  new Chart(document.getElementById('audChart'),{type:'bar',data:{labels:W,datasets:[
-    {label:'Audience Score',data:[65,68,70,72,74,76,75,80],backgroundColor:'rgba(13,148,136,0.65)',borderRadius:6},
-    {label:'Target',type:'line',data:Array(8).fill(70),borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
-  ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // Comm
-  new Chart(document.getElementById('commChart'),{type:'line',data:{labels:W,datasets:[
-    {label:'Comm Score',data:[70,72,75,78,80,82,85,88],borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,0.07)',fill:true,tension:0.4,pointRadius:3,borderWidth:2.5},
-    {label:'Target',data:Array(8).fill(75),borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
-  ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // Followers
-  new Chart(document.getElementById('flwChart'),{type:'bar',data:{labels:W,datasets:[
-    {label:'Facebook',data:[80,90,85,95,100,88,92,87],backgroundColor:'rgba(24,119,242,0.65)',borderRadius:4},
-    {label:'Instagram',data:[100,120,130,140,160,155,165,178],backgroundColor:'rgba(225,48,108,0.65)',borderRadius:4},
-    {label:'Twitter',data:[30,35,40,45,50,42,48,47],backgroundColor:'rgba(29,161,242,0.65)',borderRadius:4},
-  ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
+  // engChart, engDonut, leadsChart, audChart, commChart, flwChart and
+  // brandScoreTrendChart are all created on first use by
+  // renderEngagementKPIPage/renderLeadsKPIPage/renderFollowersKPIPage/
+  // renderAudienceKPIPage/renderCommsKPIPage/renderBrandingKPIPage (via
+  // renderTrendChart/renderQualTrendChart/renderEngagementDonut), which run
+  // right after this once real data has loaded — see renderAllKPIPages().
   // Leaderboard chart
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
-  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderPlatformTotalsCharts(); renderTrendAnalysis(); renderDashboardKPIs(); renderAIReview();
+  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderPlatformTotalsCharts(); renderTrendAnalysis(); renderAllKPIPages(); renderDashboardKPIs(); renderAIReview();
   onLgPlatformChange();
 };
 
 function switchMainTab(btn,key){
   document.querySelectorAll('.tab-pill').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  const map={eng:{data:[45,120,85,200,310,180,420,580],thr:150,lbl:'Engagement'},leads:{data:[2,5,4,8,10,8,12,9],thr:10,lbl:'Leads'},flw:{data:[20,45,60,90,70,80,100,87],thr:100,lbl:'Followers'},seo:{data:[30,35,40,44,48,42,46,44],thr:50,lbl:'SEO Rate %'}};
-  const d=map[key];window.mainChartObj.data.datasets[0].data=d.data;window.mainChartObj.data.datasets[0].label=d.lbl;window.mainChartObj.data.datasets[1].data=Array(8).fill(d.thr);window.mainChartObj.update();
+  activeMainChartKey = key;
+  renderMainChart();
 }
 
 function renderLBTable(){
@@ -987,8 +968,8 @@ function renderPlatformTotalsCharts() {
 // them, then sums valueFn(row) per platform per week. Rows for the same
 // platform+week from different brands are summed (this is a company-wide
 // view across all brands, not a single-brand snapshot).
-function buildWeeklyPlatformSeries(valueFn, maxWeeks = 6) {
-  const rowsWithBucket = logData.map(r => {
+function buildWeeklyPlatformSeries(valueFn, maxWeeks = 6, rows = logData) {
+  const rowsWithBucket = rows.map(r => {
     const bucketDate = weekBucketFromDate(r.weekEnding || r.weekStart || r.createdAt);
     return { row: r, key: weekBucketKey(bucketDate), label: weekBucketLabel(bucketDate), sortDate: bucketDate };
   });
@@ -1097,6 +1078,333 @@ function renderTrendAnalysis() {
   renderTrendTable('trendImpressionsTable', im.weekLabels, im.series);
 }
 
+// ═══ KPI DETAIL PAGES — wire real Log Week data everywhere ═══
+// Every stat-card below is mutated in place (label/value/delta/threshold/
+// progress bar/icon color) rather than having its HTML replaced, so none of
+// this touches div structure — it's pure DOM content updates, same pattern
+// as setStatCard already used for the Dashboard.
+function fillStatCard(cardEl, opts) {
+  if (!cardEl) return;
+  const lbl = cardEl.querySelector('.sc-lbl'); if (lbl && opts.label != null) lbl.textContent = opts.label;
+  const val = cardEl.querySelector('.sc-val'); if (val && opts.value != null) val.textContent = opts.value;
+  const delta = cardEl.querySelector('.sc-delta'); if (delta) { delta.textContent = opts.delta || ''; delta.style.color = opts.deltaColor || ''; }
+  const thr = cardEl.querySelector('.sc-thr'); if (thr) { thr.textContent = opts.thr || ''; thr.style.color = opts.thrColor || ''; }
+  const progf = cardEl.querySelector('.prog-f'); if (progf) { progf.style.width = Math.max(0, Math.min(100, opts.prog || 0)) + '%'; progf.style.background = opts.progColor || ''; }
+  const icon = cardEl.querySelector('.sc-icon'); if (icon && opts.iconBg) icon.style.background = opts.iconBg;
+  const iconSvg = cardEl.querySelector('.sc-icon svg'); if (iconSvg && opts.iconColor) iconSvg.style.stroke = opts.iconColor;
+}
+
+function rowsForBrandWeek(brand, wk) {
+  return logData.filter(r => r.brand === brand && r.wk === wk);
+}
+
+function topPlatformsBy(rows, valueFn, n) {
+  return rows
+    .map(r => ({ plat: r.plat, val: valueFn(r) || 0 }))
+    .filter(x => PLATFORM_TOTALS_ORDER.includes(x.plat) && x.val > 0)
+    .sort((a, b) => b.val - a.val)
+    .slice(0, n);
+}
+
+// Real week-by-week history for a single qualitative field (brandingScore/
+// audienceScore/commScore), bucketed the same weekly way as everything else.
+function buildQualSeries(brand, field, maxWeeks = 8) {
+  const withBucket = qualitativeData
+    .filter(q => q.brand === brand && q[field] != null)
+    .map(q => {
+      const bucketDate = weekBucketFromDate(q.weekEnding || null);
+      return { key: weekBucketKey(bucketDate), label: weekBucketLabel(bucketDate), date: bucketDate, value: q[field] };
+    });
+  const weekMeta = {};
+  withBucket.forEach(w => { weekMeta[w.key] = w; });
+  let keys = Object.keys(weekMeta).sort((a, b) => weekMeta[a].date - weekMeta[b].date);
+  if (keys.length > maxWeeks) keys = keys.slice(keys.length - maxWeeks);
+  return keys.map(k => ({ label: weekMeta[k].label, value: weekMeta[k].value }));
+}
+
+function renderEngagementKPIPage() {
+  const scope = document.querySelector('#page-engagement .g4');
+  if (!scope) return;
+  const cards = scope.querySelectorAll('.stat-card');
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const brandRows = logData.filter(r => r.brand === brand);
+
+  if (!row) {
+    fillStatCard(cards[0], { label: 'Total Engagement', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: 0 });
+    fillStatCard(cards[1], { label: 'Engagement Score', value: '—', delta: '', thr: '', prog: 0 });
+    fillStatCard(cards[2], { label: 'Top Platform', value: '—', delta: '', thr: '', prog: 0 });
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / 6', delta: '', thr: '', prog: 0 });
+  } else {
+    const weekRows = rowsForBrandWeek(brand, row.wk);
+    const top = topPlatformsBy(weekRows, r => r.engagementTotal, 1)[0];
+    const loggedCount = new Set(weekRows.map(r => r.plat).filter(p => PLATFORM_TOTALS_ORDER.includes(p))).size;
+    const pct = Math.round(row.engagementTotal / KPI_TARGETS.engagement * 100);
+    const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
+
+    fillStatCard(cards[0], { label: 'Total Engagement', value: row.engagementTotal.toLocaleString(), delta: (pct >= 100 ? '✓ ' : '') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: pct, progColor: pctColor });
+    fillStatCard(cards[1], { label: 'Engagement Score', value: row.engScore + '/100', delta: 'Grade: ' + row.grade, deltaColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)', thr: row.engScore >= 80 ? '✓ Above 80 threshold' : 'Below 80 threshold', thrColor: row.engScore >= 80 ? 'var(--green)' : 'var(--red)', prog: row.engScore, progColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)' });
+    fillStatCard(cards[2], { label: 'Top Platform', value: top ? top.plat : '—', delta: top ? top.val.toLocaleString() + ' engagement' : 'No platforms logged', deltaColor: 'var(--sub)', thr: row.wk, prog: top ? 100 : 0, progColor: top ? PLATFORM_COLORS[top.plat].hex : 'var(--sub2)', iconBg: top ? PLATFORM_COLORS[top.plat].bgVar : '', iconColor: top ? PLATFORM_COLORS[top.plat].textVar : '' });
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / 6', delta: loggedCount >= 6 ? '✓ All platforms logged' : (6 - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / 6 * 100), progColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)' });
+  }
+
+  const series = buildWeeklyPlatformSeries(r => r.engagementTotal || 0, 8, brandRows);
+  renderTrendChart('engChart', 'engChartObj', series.weekLabels, series.series);
+  renderEngagementDonut(row, brand);
+}
+
+function renderEngagementDonut(row, brand) {
+  const canvas = document.getElementById('engDonut');
+  if (!canvas) return;
+  let labels = [], data = [], colors = [];
+  if (row) {
+    const weekRows = rowsForBrandWeek(brand, row.wk).filter(r => PLATFORM_TOTALS_ORDER.includes(r.plat) && r.engagementTotal > 0);
+    labels = weekRows.map(r => r.plat);
+    data = weekRows.map(r => r.engagementTotal);
+    colors = weekRows.map(r => PLATFORM_COLORS[r.plat].hex);
+  }
+  if (!labels.length) { labels = ['No data yet']; data = [1]; colors = ['#e2e8f0']; }
+  if (window.engDonutObj) {
+    window.engDonutObj.data.labels = labels;
+    window.engDonutObj.data.datasets[0].data = data;
+    window.engDonutObj.data.datasets[0].backgroundColor = colors;
+    window.engDonutObj.update();
+    return;
+  }
+  window.engDonutObj = new Chart(canvas, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 7 }] }, options: { cutout: '60%', plugins: { legend: { position: 'bottom', labels: { color: '#64748b', font: { size: 11, family: 'Inter' }, padding: 12, boxWidth: 10 } }, tooltip: tt } } });
+}
+
+function renderLeadsKPIPage() {
+  const scope = document.querySelector('#page-leads .g4');
+  if (!scope) return;
+  const cards = scope.querySelectorAll('.stat-card');
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const brandRows = logData.filter(r => r.brand === brand);
+
+  if (!row) {
+    fillStatCard(cards[0], { label: 'Total Leads', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.leads + '/wk', prog: 0 });
+    for (let i = 1; i < cards.length; i++) fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
+  } else {
+    const weekRows = rowsForBrandWeek(brand, row.wk);
+    const top3 = topPlatformsBy(weekRows, r => r.leads, 3);
+    const pct = Math.round(row.leads / KPI_TARGETS.leads * 100);
+    const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
+    fillStatCard(cards[0], { label: 'Total Leads', value: row.leads, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.leads + '/wk', prog: pct, progColor: pctColor });
+    for (let i = 1; i < cards.length; i++) {
+      const p = top3[i - 1];
+      if (p) {
+        const share = row.leads > 0 ? Math.round(p.val / row.leads * 100) : 0;
+        fillStatCard(cards[i], { label: p.plat + ' Leads', value: p.val, delta: share + '% of total leads', deltaColor: 'var(--sub)', thr: row.wk, prog: share, progColor: PLATFORM_COLORS[p.plat].hex, iconBg: PLATFORM_COLORS[p.plat].bgVar, iconColor: PLATFORM_COLORS[p.plat].textVar });
+      } else {
+        fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
+      }
+    }
+  }
+  const series = buildWeeklyPlatformSeries(r => r.leads || 0, 8, brandRows);
+  renderTrendChart('leadsChart', 'leadsChartObj', series.weekLabels, series.series);
+}
+
+function renderFollowersKPIPage() {
+  const scope = document.querySelector('#page-followers .g4');
+  if (!scope) return;
+  const cards = scope.querySelectorAll('.stat-card');
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const brandRows = logData.filter(r => r.brand === brand);
+
+  if (!row) {
+    fillStatCard(cards[0], { label: 'Total New Followers', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.followers + '/wk', prog: 0 });
+    for (let i = 1; i < cards.length; i++) fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
+  } else {
+    const weekRows = rowsForBrandWeek(brand, row.wk);
+    const top3 = topPlatformsBy(weekRows, r => r.followers, 3);
+    const pct = Math.round(row.followers / KPI_TARGETS.followers * 100);
+    const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
+    fillStatCard(cards[0], { label: 'Total New Followers', value: row.followers, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.followers + '/wk', prog: pct, progColor: pctColor });
+    for (let i = 1; i < cards.length; i++) {
+      const p = top3[i - 1];
+      if (p) {
+        const share = row.followers > 0 ? Math.round(p.val / row.followers * 100) : 0;
+        fillStatCard(cards[i], { label: p.plat, value: p.val, delta: share + '% of total growth', deltaColor: 'var(--sub)', thr: row.wk, prog: share, progColor: PLATFORM_COLORS[p.plat].hex, iconBg: PLATFORM_COLORS[p.plat].bgVar, iconColor: PLATFORM_COLORS[p.plat].textVar });
+      } else {
+        fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
+      }
+    }
+  }
+  const series = buildWeeklyPlatformSeries(r => r.followers || 0, 8, brandRows);
+  renderTrendChart('flwChart', 'flwChartObj', series.weekLabels, series.series);
+}
+
+function renderSEOKPIPage() {
+  const scope = document.querySelector('#page-seo .g4');
+  if (!scope) return;
+  const cards = scope.querySelectorAll('.stat-card');
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const weekPosts = row ? seoPostsData.filter(s => s.brand === brand && s.wk === row.wk) : [];
+  const total = weekPosts.length;
+  const ranked = weekPosts.filter(s => s.rank && s.rank !== 'Not found');
+  const notRanking = weekPosts.filter(s => s.rank === 'Not found').length;
+  const rankingRate = total > 0 ? Math.round(ranked.length / total * 100) : 0;
+
+  fillStatCard(cards[0], { label: 'Posts This Week', value: total, delta: total >= 15 ? '✓ Target met' : total > 0 ? (15 - total) + ' short of target' : 'No posts yet', deltaColor: total >= 15 ? 'var(--green)' : total > 0 ? 'var(--amber)' : 'var(--sub2)', thr: 'Target: 15', prog: Math.min(total / 15 * 100, 100), progColor: total >= 15 ? 'var(--green)' : 'var(--amber)' });
+  fillStatCard(cards[1], { label: 'Ranking Rate', value: rankingRate + '%', delta: total === 0 ? 'No posts yet' : rankingRate >= 50 ? '✓ On target' : 'Below 50% target', deltaColor: total === 0 ? 'var(--sub2)' : rankingRate >= 50 ? 'var(--green)' : 'var(--red)', thr: 'Target: 50%', prog: rankingRate, progColor: rankingRate >= 50 ? 'var(--green)' : 'var(--amber)' });
+  fillStatCard(cards[2], { label: 'Ranking Posts', value: ranked.length, delta: ranked.length > 0 ? ranked.length + ' ranking (#1–#5)' : 'None ranking yet', deltaColor: ranked.length > 0 ? 'var(--green)' : 'var(--sub2)', thr: total > 0 ? Math.round(ranked.length / total * 100) + '% of posts' : '—', prog: total > 0 ? Math.round(ranked.length / total * 100) : 0, progColor: 'var(--green)' });
+  fillStatCard(cards[3], { label: 'Not Ranking', value: notRanking, delta: notRanking > 0 ? 'Needs attention' : total > 0 ? '✓ None' : 'No posts yet', deltaColor: notRanking > 0 ? 'var(--red)' : 'var(--green)', thr: total > 0 ? Math.round(notRanking / total * 100) + '% of posts' : '—', prog: total > 0 ? Math.round(notRanking / total * 100) : 0, progColor: 'var(--red)' });
+}
+
+function renderAudienceKPIPage() {
+  const scope = document.querySelector('#page-audience .g4');
+  if (!scope) return;
+  const cards = scope.querySelectorAll('.stat-card');
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const series = buildQualSeries(brand, 'audienceScore');
+  const latest = series[series.length - 1], prev = series[series.length - 2];
+  const score = latest ? latest.value : null;
+  const delta = latest && prev ? Math.round(latest.value - prev.value) : null;
+  const hasNotes = !!(row && row.qual && row.qual.audienceNotes);
+
+  fillStatCard(cards[0], { label: 'Audience Score', value: score != null ? score + '/100' : '—', delta: score != null ? (score >= 70 ? '✓ Above target' : 'Below target') : 'No data yet', deltaColor: score == null ? 'var(--sub2)' : score >= 70 ? 'var(--green)' : 'var(--red)', thr: 'Target: 70+', prog: score || 0, progColor: score >= 70 ? 'var(--teal)' : score >= 50 ? 'var(--amber)' : 'var(--red)' });
+  fillStatCard(cards[1], { label: 'vs Last Week', value: delta != null ? (delta >= 0 ? '+' : '') + delta : '—', delta: delta != null ? (delta >= 0 ? '▲ Improved' : '▼ Declined') : 'No prior week yet', deltaColor: delta == null ? 'var(--sub2)' : delta >= 0 ? 'var(--green)' : 'var(--red)', thr: prev ? prev.label : '—', prog: delta != null ? Math.min(Math.abs(delta) * 4, 100) : 0, progColor: delta >= 0 ? 'var(--green)' : 'var(--red)' });
+  fillStatCard(cards[2], { label: 'Notes Status', value: hasNotes ? 'Submitted' : 'None', delta: row ? row.wk : '', deltaColor: 'var(--sub)', thr: hasNotes ? '✓ Notes on file' : 'Add notes in Log Week', thrColor: hasNotes ? 'var(--green)' : 'var(--amber)', prog: hasNotes ? 100 : 0, progColor: 'var(--teal)' });
+  fillStatCard(cards[3], { label: 'Weeks Tracked', value: series.length, delta: series.length + ' of last 8 weeks logged', deltaColor: 'var(--sub)', thr: '', prog: Math.round(series.length / 8 * 100), progColor: 'var(--teal)' });
+
+  renderQualTrendChart('audChart', 'audChartObj', series, 'Audience Score', 'rgba(13,148,136,0.65)', '#0d9488', 70, 'bar');
+}
+
+function renderCommsKPIPage() {
+  const scope = document.querySelector('#page-comms .g3');
+  if (!scope) return;
+  const cards = scope.querySelectorAll('.stat-card');
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const series = buildQualSeries(brand, 'commScore');
+  const latest = series[series.length - 1], prev = series[series.length - 2];
+  const score = latest ? latest.value : null;
+  const delta = latest && prev ? Math.round(latest.value - prev.value) : null;
+  const hasNotes = !!(row && row.qual && row.qual.commNotes);
+
+  fillStatCard(cards[0], { label: 'Comm Score', value: score != null ? score + '/100' : '—', delta: score != null ? 'Grade: ' + gradeFor(score) : 'No data yet', deltaColor: score == null ? 'var(--sub2)' : score >= 75 ? 'var(--green)' : 'var(--amber)', thr: 'Target: 75+', prog: score || 0, progColor: score >= 75 ? 'var(--green)' : score >= 50 ? 'var(--amber)' : 'var(--red)' });
+  fillStatCard(cards[1], { label: 'vs Last Week', value: delta != null ? (delta >= 0 ? '+' : '') + delta : '—', delta: delta != null ? (delta >= 0 ? '▲ Improved' : '▼ Declined') : 'No prior week yet', deltaColor: delta == null ? 'var(--sub2)' : delta >= 0 ? 'var(--green)' : 'var(--red)', thr: prev ? prev.label : '—', prog: delta != null ? Math.min(Math.abs(delta) * 4, 100) : 0, progColor: delta >= 0 ? 'var(--green)' : 'var(--red)' });
+  fillStatCard(cards[2], { label: 'Notes Status', value: hasNotes ? 'Submitted' : 'None', delta: row ? row.wk : '', deltaColor: 'var(--sub)', thr: hasNotes ? '✓ Notes on file' : 'Add notes in Log Week', thrColor: hasNotes ? 'var(--green)' : 'var(--amber)', prog: hasNotes ? 100 : 0, progColor: 'var(--green)' });
+
+  renderQualTrendChart('commChart', 'commChartObj', series, 'Comm Score', 'rgba(22,163,74,0.07)', '#16a34a', 75, 'line');
+}
+
+// Shared line/bar chart renderer for a single qualitative score's real
+// history (Branding/Audience/Communication all use this same shape of data:
+// one score per brand per week).
+function renderQualTrendChart(canvasId, storeKey, series, label, fillColor, lineColor, target, kind) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const labels = series.map(s => s.label);
+  const data = series.map(s => s.value);
+  const targetLine = { label: 'Target', data: labels.map(() => target), borderColor: '#d97706', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false, type: 'line' };
+  const mainDataset = kind === 'bar'
+    ? { label, data, backgroundColor: fillColor, borderRadius: 6, type: 'bar' }
+    : { label, data, borderColor: lineColor, backgroundColor: fillColor, fill: true, tension: 0.4, pointRadius: 3, borderWidth: 2.5, type: 'line' };
+  if (window[storeKey]) {
+    window[storeKey].data.labels = labels;
+    window[storeKey].data.datasets = [mainDataset, targetLine];
+    window[storeKey].update();
+    return;
+  }
+  window[storeKey] = new Chart(canvas, { type: kind === 'bar' ? 'bar' : 'line', data: { labels, datasets: [mainDataset, targetLine] }, options: { ...bOpt(), plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 11, family: 'Inter' }, boxWidth: 10, padding: 14 } }, tooltip: tt } } });
+}
+
+// Dashboard "Performance Trend" — real weekly totals for the current brand,
+// switchable between the 4 quantifiable KPIs via the tab pills.
+function buildMainChartSeries(key, brand) {
+  const brandRows = logData.filter(r => r.brand === brand);
+  if (key === 'seo') {
+    const withBucket = seoPostsData.filter(s => s.brand === brand).map(s => {
+      // seo posts don't carry weekEnding on the mapped object; fall back to
+      // the week label text itself for bucketing since it's already
+      // consistent going forward (getWeekLabel-derived).
+      return s.wk;
+    });
+    const counts = {};
+    withBucket.forEach(wk => { counts[wk] = (counts[wk] || 0) + 1; });
+    const keys = Object.keys(counts);
+    return { labels: keys.map(k => k.replace('Wk of ', '')), data: keys.map(k => counts[k]), thr: 15 };
+  }
+  const valueFn = key === 'eng' ? (r => r.engagementTotal || 0) : key === 'leads' ? (r => r.leads || 0) : (r => r.followers || 0);
+  const series = buildWeeklyPlatformSeries(valueFn, 8, brandRows);
+  const labels = series.weekLabels;
+  const data = labels.map((_, i) => PLATFORM_TOTALS_ORDER.reduce((sum, p) => sum + (series.series[p][i] || 0), 0));
+  const thr = key === 'eng' ? KPI_TARGETS.engagement : key === 'leads' ? KPI_TARGETS.leads : KPI_TARGETS.followers;
+  return { labels, data, thr };
+}
+
+let activeMainChartKey = 'eng';
+function renderMainChart() {
+  if (!window.mainChartObj) return;
+  const key = activeMainChartKey;
+  const lbl = { eng: 'Engagement', leads: 'Leads', flw: 'Followers', seo: 'SEO Posts' }[key];
+  const { labels, data, thr } = buildMainChartSeries(key, currentDashboardBrand());
+  window.mainChartObj.data.labels = labels;
+  window.mainChartObj.data.datasets[0].data = data;
+  window.mainChartObj.data.datasets[0].label = lbl;
+  window.mainChartObj.data.datasets[1].data = labels.map(() => thr);
+  window.mainChartObj.update();
+}
+
+// AI Review "Score History" — real weekly composite score for the brand.
+function renderAIHistChart() {
+  const canvas = document.getElementById('aiHistChart');
+  if (!canvas || !window.aiHistChartObj) return;
+  const brand = currentDashboardBrand();
+  const rows = overallData.filter(r => r.brand === brand).slice().sort((a, b) => weekBucketFromDate(a.weekEnding || null) - weekBucketFromDate(b.weekEnding || null));
+  const trimmed = rows.slice(-8);
+  const labels = trimmed.map(r => weekBucketLabel(weekBucketFromDate(r.weekEnding || null)));
+  const data = trimmed.map(r => r.score);
+  window.aiHistChartObj.data.labels = labels;
+  window.aiHistChartObj.data.datasets[0].data = data;
+  window.aiHistChartObj.data.datasets[1].data = labels.map(() => 80);
+  window.aiHistChartObj.update();
+}
+
+// Real content for the Branding KPI page's Score History chart + Manager
+// Notes box (both replace fabricated demo content that had no real Log Week
+// field behind it).
+function renderBrandingKPIPage() {
+  const brand = currentDashboardBrand();
+  const row = getDashboardRow();
+  const scoreEl = document.getElementById('brandHeroScore');
+  const statusEl = document.getElementById('brandHeroStatus');
+  const series = buildQualSeries(brand, 'brandingScore');
+  const score = row && row.brandingScore != null ? row.brandingScore : null;
+  if (scoreEl) scoreEl.textContent = score != null ? score : '—';
+  if (statusEl) statusEl.textContent = score == null ? 'No data yet' : score >= 90 ? '✨ Excellent' : score >= 75 ? '✓ Good' : score >= 50 ? '⚠ Needs work' : '✗ Below target';
+
+  renderQualTrendChart('brandScoreTrendChart', 'brandScoreTrendChartObj', series, 'Branding Score', 'rgba(124,58,237,0.12)', '#7c3aed', 75, 'line');
+
+  const notesEl = document.getElementById('brandManagerNotes');
+  if (notesEl) {
+    const notes = row && row.qual && row.qual.brandNotes;
+    notesEl.innerHTML = notes
+      ? `<div class="ai-box"><div class="ai-box-title">Manager Notes — ${row.wk}</div><div class="ai-box-body">${notes}</div></div>`
+      : `<div class="ai-box" style="background:var(--bg);border-left-color:var(--sub2)"><div class="ai-box-title" style="color:var(--sub2)">No notes submitted yet</div><div class="ai-box-body">Branding notes entered in Log Week will show up here.</div></div>`;
+  }
+}
+
+// Central place that refreshes every KPI detail page + dashboard/AI charts
+// tied to whichever brand is currently in view — called after data loads
+// and whenever the admin brand switcher changes.
+function renderAllKPIPages() {
+  renderEngagementKPIPage();
+  renderLeadsKPIPage();
+  renderFollowersKPIPage();
+  renderSEOKPIPage();
+  renderAudienceKPIPage();
+  renderCommsKPIPage();
+  renderBrandingKPIPage();
+  renderMainChart();
+  renderAIHistChart();
+}
+
 function showPage(id,nav){
   // KPI Targets & Weights is Admin-only. Block managers even if they reach
   // this some other way than clicking the (already-hidden) nav item.
@@ -1112,7 +1420,7 @@ function showPage(id,nav){
 }
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');}
 function setPeriod(btn){document.querySelectorAll('.pchip').forEach(c=>c.classList.remove('active'));btn.classList.add('active');showToast('Period: '+btn.textContent);}
-function setBrand(btn,b){document.querySelectorAll('.bpill').forEach(c=>c.classList.remove('active'));btn.classList.add('active');selectedDashboardBrand=b;renderDashboardKPIs();renderAIReview();showToast('Switched to '+b);}
+function setBrand(btn,b){document.querySelectorAll('.bpill').forEach(c=>c.classList.remove('active'));btn.classList.add('active');selectedDashboardBrand=b;renderDashboardKPIs();renderAIReview();renderAllKPIPages();showToast('Switched to '+b);}
 function setLBPeriod(btn,p){document.querySelectorAll('.tab-pill').forEach(t=>t.classList.remove('active'));btn.classList.add('active');showToast('Leaderboard: '+btn.textContent);}
 function selKPI(card,k){document.querySelectorAll('#page-dashboard .stat-card').forEach(c=>c.classList.remove('sel'));card.classList.add('sel');}
 function openModal(id){document.getElementById(id).classList.add('open');}
