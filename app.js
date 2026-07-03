@@ -259,9 +259,30 @@ function onLgPlatformChange() {
 // Turns a "Week Ending" date into a stable label so that logging multiple
 // platforms for the same real week produces the SAME week, instead of a
 // fresh "Wk N" every time someone hits submit.
+// This is a WEEKLY system, so any date — whichever day of the week it
+// actually falls on — always snaps forward to the Sunday that ends its
+// calendar week. Without this, two managers logging the same intended week
+// on different days (or the "Week Ending" field being left blank, which
+// used to fall back to the literal date of whichever day someone hit
+// Submit) would each mint their own brand-new "week", producing daily-
+// looking labels like "Jul 1", "Jul 2", "Jul 3" instead of one real week.
+function weekBucketFromDate(dateStr) {
+  const d = dateStr ? new Date(String(dateStr).length <= 10 ? dateStr + 'T00:00:00' : dateStr) : new Date();
+  const day = d.getDay(); // 0 = Sunday ... 6 = Saturday
+  const daysToAdd = (7 - day) % 7;
+  const weekEnd = new Date(d);
+  weekEnd.setDate(d.getDate() + daysToAdd);
+  return weekEnd;
+}
+function weekBucketKey(dateObj) {
+  return dateObj.toISOString().slice(0, 10);
+}
+function weekBucketLabel(dateObj) {
+  return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function getWeekLabel(dateStr) {
-  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
-  return 'Wk of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return 'Wk of ' + weekBucketLabel(weekBucketFromDate(dateStr));
 }
 
 // Short "Jun 26" style formatting for the Week Start date, used anywhere the
@@ -956,29 +977,35 @@ function renderPlatformTotalsCharts() {
 // and a week-by-week detail table. Everything here reads live logData, the
 // same rows the rest of the Reports page already uses.
 
-// Groups every logged row by its week label, sorts those weeks chronologically
-// (oldest → newest) using whichever date is available, keeps only the most
-// recent maxWeeks of them, then sums valueFn(row) per platform per week.
-// Rows for the same platform+week from different brands are summed (this is
-// a company-wide view across all brands, not a single-brand snapshot).
+// Groups every logged row into a real calendar week (Sunday-ending, via
+// weekBucketFromDate) derived straight from its own weekEnding/weekStart/
+// createdAt date — NOT from the row's stored wk text. That makes this
+// resilient even against older rows whose week_label happened to be minted
+// per-submission-day rather than per-week: bucketing here is always by
+// actual week, so the chart is guaranteed weekly, never daily. Sorts weeks
+// chronologically (oldest → newest), keeps only the most recent maxWeeks of
+// them, then sums valueFn(row) per platform per week. Rows for the same
+// platform+week from different brands are summed (this is a company-wide
+// view across all brands, not a single-brand snapshot).
 function buildWeeklyPlatformSeries(valueFn, maxWeeks = 6) {
-  const weekDate = {};
-  logData.forEach(r => {
-    if (!(r.wk in weekDate)) weekDate[r.wk] = r.weekEnding || r.weekStart || null;
-    else if (!weekDate[r.wk] && (r.weekEnding || r.weekStart)) weekDate[r.wk] = r.weekEnding || r.weekStart;
+  const rowsWithBucket = logData.map(r => {
+    const bucketDate = weekBucketFromDate(r.weekEnding || r.weekStart || r.createdAt);
+    return { row: r, key: weekBucketKey(bucketDate), label: weekBucketLabel(bucketDate), sortDate: bucketDate };
   });
-  let weekKeys = Object.keys(weekDate);
-  weekKeys.sort((a, b) => new Date(weekDate[a] || 0) - new Date(weekDate[b] || 0));
+
+  const weekMeta = {};
+  rowsWithBucket.forEach(rb => { if (!weekMeta[rb.key]) weekMeta[rb.key] = { date: rb.sortDate, label: rb.label }; });
+  let weekKeys = Object.keys(weekMeta).sort((a, b) => weekMeta[a].date - weekMeta[b].date);
   if (weekKeys.length > maxWeeks) weekKeys = weekKeys.slice(weekKeys.length - maxWeeks);
 
   const series = {};
   PLATFORM_TOTALS_ORDER.forEach(p => { series[p] = weekKeys.map(() => 0); });
-  logData.forEach(r => {
-    const wi = weekKeys.indexOf(r.wk);
-    if (wi === -1 || !series[r.plat]) return;
-    series[r.plat][wi] += valueFn(r) || 0;
+  rowsWithBucket.forEach(rb => {
+    const wi = weekKeys.indexOf(rb.key);
+    if (wi === -1 || !series[rb.row.plat]) return;
+    series[rb.row.plat][wi] += valueFn(rb.row) || 0;
   });
-  return { weekLabels: weekKeys.map(wk => wk.replace('Wk of ', '')), series };
+  return { weekLabels: weekKeys.map(k => weekMeta[k].label), series };
 }
 
 function renderTrendChart(canvasId, storeKey, weekLabels, series) {

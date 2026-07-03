@@ -217,12 +217,44 @@ canvas { display:block; }
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.5s infinite;margin-right:4px;}
 
+/* Tablet range — soften the widest grids to 2 columns before the 900px
+   breakpoint collapses everything to a single column. Keeps stat-card rows
+   and chart pairs (Platform Totals, Trend Analysis) from feeling cramped on
+   iPad-width screens. Source order matters here: this rule sits ABOVE the
+   900px block below so that block's 1-column rule still wins underneath it. */
+@media(max-width:1200px){
+  .g3,.g4{grid-template-columns:1fr 1fr;}
+}
+
 @media(max-width:900px){
   .sidebar{transform:translateX(-110%);}
   .sidebar.open{transform:translateX(0);}
   .main{margin-left:0;padding:14px;}
   .g4,.g7{grid-template-columns:1fr 1fr;}
   .g3,.g2,.g32,.g23{grid-template-columns:1fr;}
+}
+
+/* Small phones — tighten padding and font sizes so cards, header actions,
+   modals and score bars never overflow a narrow viewport or force
+   horizontal scrolling on the page itself (tables already scroll internally
+   via .card:has(.sp-table)). */
+@media(max-width:480px){
+  .main{padding:10px;}
+  .card{padding:16px;}
+  .header-card{padding:16px;gap:10px;}
+  .hc-title{font-size:17px;}
+  .hc-sub{font-size:11px;}
+  .btn-blue,.btn-dark,.btn-outline{padding:9px 14px;font-size:12px;}
+  .stat-card{padding:14px 16px;}
+  .sc-val{font-size:21px;}
+  .sc-icon{width:34px;height:34px;}
+  .modal{padding:18px;}
+  .modal-title{font-size:17px;}
+  .form-row{grid-template-columns:1fr;}
+  .ai-bar-label{width:96px;font-size:11px;}
+  .mini-lbl{width:50px;}
+  .card-title{font-size:14px;}
+  .login-card{padding:26px 20px;}
 }
 
 /* ═══ LOGIN SCREEN ═══ */
