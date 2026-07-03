@@ -106,6 +106,133 @@ const KPI_TARGETS = { engagement: 600, leads: 40, followers: 400 };
 // Weight of each of the 7 KPIs in the full composite score (sums to 100).
 const KPI_WEIGHTS = { engagement: 20, leads: 25, followers: 10, seo: 10, branding: 15, audience: 10, comm: 10 };
 
+// ═══ PER-PLATFORM LOG FIELDS ═══
+// Each social media platform's Log Week form shows its own distinct set of
+// metrics (matching what that platform's real analytics screen surfaces).
+// "Leads Generated" stays a separate universal field below these since none
+// of these platforms report leads directly, but leads is still 25% of score.
+const PLATFORM_FIELDS = {
+  'Facebook': [
+    { key: 'views', label: 'Views' },
+    { key: 'viewers', label: 'Viewers' },
+    { key: 'shares', label: 'Shares' },
+    { key: 'reactions', label: 'Reactions' },
+    { key: 'comments', label: 'Comments' },
+    { key: 'totalFollowers', label: 'Total Followers' },
+    { key: 'newFollowers', label: 'New Followers' },
+    { key: 'unfollows', label: 'Unfollows' }
+  ],
+  'LinkedIn': [
+    { key: 'impressions', label: 'Impressions' },
+    { key: 'likes', label: 'Likes' },
+    { key: 'reactions', label: 'Reactions' },
+    { key: 'reposts', label: 'Reposts' },
+    { key: 'comments', label: 'Comments' },
+    { key: 'totalFollowers', label: 'Total Followers' },
+    { key: 'newFollowers', label: 'New Followers' },
+    { key: 'connections', label: 'Connections' }
+  ],
+  'Twitter': [
+    { key: 'impressions', label: 'Impressions' },
+    { key: 'totalFollowers', label: 'Total Followers' },
+    { key: 'newFollowers', label: 'New Followers' }
+  ],
+  'TikTok': [
+    { key: 'views', label: 'Views' },
+    { key: 'likes', label: 'Likes' },
+    { key: 'totalViewers', label: 'Total Viewers' },
+    { key: 'newViewers', label: 'New Viewers' },
+    { key: 'shares', label: 'Shares' },
+    { key: 'comments', label: 'Comments' },
+    { key: 'followers', label: 'Followers' },
+    { key: 'newFollowers', label: 'New Followers' }
+  ],
+  'Instagram': [
+    { key: 'views', label: 'Views' },
+    { key: 'likes', label: 'Likes' },
+    { key: 'profileVisits', label: 'Profile Visits' },
+    { key: 'reach', label: 'Reach' },
+    { key: 'interactions', label: 'Interactions' },
+    { key: 'followers', label: 'Followers' },
+    { key: 'newFollowers', label: 'New Followers' },
+    { key: 'unfollows', label: 'Unfollows' }
+  ],
+  'YouTube': [
+    { key: 'watchTime', label: 'Watch Time (hrs)' },
+    { key: 'views', label: 'Views' },
+    { key: 'likes', label: 'Likes' },
+    { key: 'impressions', label: 'Impressions' },
+    { key: 'subscribers', label: 'Subscribers' },
+    { key: 'newSubs', label: 'New Subs' }
+  ]
+};
+
+// Maps each platform's very different raw fields into the two numbers the
+// scoring engine actually needs: an Engagement total (interaction-type
+// activity — likes/reactions/comments/shares/reposts, NOT pure reach numbers
+// like Views/Impressions/Reach) and a Followers number (that week's follower
+// growth, kept consistent with how every other platform's "New Followers"
+// already worked). Views/Impressions/Reach/Watch Time/Profile Visits are
+// still captured and stored for reference but don't inflate the Engagement
+// score, since they measure reach rather than interaction.
+// Exception: Twitter only exposes Impressions + follower counts, so
+// Impressions is used as its Engagement proxy (no other interaction metric
+// is available for it).
+function getEngagementAndFollowers(platform, v) {
+  switch (platform) {
+    case 'Facebook':
+      return { engagement: (v.reactions || 0) + (v.comments || 0) + (v.shares || 0), followerGrowth: v.newFollowers || 0 };
+    case 'LinkedIn':
+      return { engagement: (v.likes || 0) + (v.reactions || 0) + (v.reposts || 0) + (v.comments || 0), followerGrowth: (v.newFollowers || 0) + (v.connections || 0) };
+    case 'Twitter':
+      return { engagement: v.impressions || 0, followerGrowth: v.newFollowers || 0 };
+    case 'TikTok':
+      return { engagement: (v.likes || 0) + (v.shares || 0) + (v.comments || 0), followerGrowth: v.newFollowers || 0 };
+    case 'Instagram':
+      return { engagement: v.interactions || 0, followerGrowth: v.newFollowers || 0 };
+    case 'YouTube':
+      return { engagement: v.likes || 0, followerGrowth: v.newSubs || 0 };
+    default:
+      return { engagement: 0, followerGrowth: 0 };
+  }
+}
+
+// Formats a stored raw_metrics object (keyed by human-readable label, e.g.
+// {"Views": 4663, "Shares": 26}) into a compact "Label: value · Label: value"
+// string for table "Details" columns. Skips zero/blank values to stay short.
+function fmtRawMetrics(raw) {
+  if (!raw || typeof raw !== 'object') return '—';
+  const entries = Object.entries(raw).filter(([, v]) => v !== null && v !== undefined && v !== 0 && v !== '');
+  if (!entries.length) return '—';
+  return entries.map(([k, v]) => `${k}: ${typeof v === 'number' ? v.toLocaleString() : v}`).join(' · ');
+}
+
+// Builds the Log Week modal's platform-specific input fields for whichever
+// platform is currently selected. Field ids are prefixed "pf_" and only one
+// platform's set exists in the DOM at a time (the whole container is replaced
+// on every platform switch), so there's no id collision even though several
+// platforms share field names like "Views" or "Likes".
+function renderPlatformFieldInputs(platform) {
+  const container = document.getElementById('platformFieldsContainer');
+  if (!container) return;
+  const fields = PLATFORM_FIELDS[platform] || [];
+  let html = '';
+  for (let i = 0; i < fields.length; i += 2) {
+    const a = fields[i], b = fields[i + 1];
+    html += `<div class="form-row"><div class="form-group"><label>${a.label}</label><input type="number" id="pf_${a.key}" placeholder="0"></div>`;
+    html += b ? `<div class="form-group"><label>${b.label}</label><input type="number" id="pf_${b.key}" placeholder="0"></div></div>` : `</div>`;
+  }
+  container.innerHTML = html;
+}
+
+// Fired when the Platform dropdown changes (and once on load for the default
+// selection) so the form always shows the right fields for that platform.
+function onLgPlatformChange() {
+  const platformEl = document.getElementById('lgPlatform');
+  const platform = platformEl ? platformEl.value : 'Facebook';
+  renderPlatformFieldInputs(platform);
+}
+
 // Turns a "Week Ending" date into a stable label so that logging multiple
 // platforms for the same real week produces the SAME week, instead of a
 // fresh "Wk N" every time someone hits submit.
@@ -127,8 +254,8 @@ function fmtDateShort(dateStr) {
 // model). Rescaled to a 0-100 scale since SEO/Branding/Audience/Communication
 // (the remaining 45%) are AI/manually scored elsewhere and aren't part of
 // this form yet.
-function calcScore({ likes = 0, comments = 0, reposts = 0, followers = 0, leads = 0 }) {
-  const engScore = Math.min((likes + comments + reposts) / KPI_TARGETS.engagement * 100, 100);
+function calcScore({ engagementTotal = 0, followers = 0, leads = 0 }) {
+  const engScore = Math.min(engagementTotal / KPI_TARGETS.engagement * 100, 100);
   const leadsScore = Math.min(leads / KPI_TARGETS.leads * 100, 100);
   const followersScore = Math.min(followers / KPI_TARGETS.followers * 100, 100);
   const weighted = (engScore * 20 + leadsScore * 25 + followersScore * 10) / 55;
@@ -150,8 +277,8 @@ function rankToScore(rank) {
 // weekly_qualitative row. Any KPI that hasn't been logged yet for the week is
 // left out and the remaining weights are rescaled to 100, so the score is
 // always meaningful even before every KPI has data.
-function calcFullScore({ likes = 0, comments = 0, reposts = 0, followers = 0, leads = 0, seoScore = null, brandingScore = null, audienceScore = null, commScore = null }) {
-  const engScore = Math.min((likes + comments + reposts) / KPI_TARGETS.engagement * 100, 100);
+function calcFullScore({ engagementTotal = 0, followers = 0, leads = 0, seoScore = null, brandingScore = null, audienceScore = null, commScore = null }) {
+  const engScore = Math.min(engagementTotal / KPI_TARGETS.engagement * 100, 100);
   const leadsScore = Math.min(leads / KPI_TARGETS.leads * 100, 100);
   const followersScore = Math.min(followers / KPI_TARGETS.followers * 100, 100);
   const parts = [
@@ -198,9 +325,8 @@ function mapRowToLogEntry(row) {
     mgr: row.manager,
     brand: row.brand,
     plat: row.platform || 'All Platforms',
-    likes: row.likes || 0,
-    comments: row.comments || 0,
-    reposts: row.reposts || 0,
+    engagementTotal: row.engagement_total || 0,
+    rawMetrics: row.raw_metrics || {},
     followers: row.followers || 0,
     leads: row.leads || 0,
     score: row.score || 0,
@@ -250,10 +376,10 @@ function aggregateOverall(platformRows, qualRows, seoRows) {
   platformRows.forEach(r => {
     const key = r.brand + '||' + r.wk;
     if (!groups[key]) {
-      groups[key] = { brand: r.brand, wk: r.wk, weekEnding: r.weekEnding, mgr: r.mgr, likes: 0, comments: 0, reposts: 0, followers: 0, leads: 0, platforms: [], latestCreatedAt: r.createdAt || 0 };
+      groups[key] = { brand: r.brand, wk: r.wk, weekEnding: r.weekEnding, mgr: r.mgr, engagementTotal: 0, followers: 0, leads: 0, platforms: [], latestCreatedAt: r.createdAt || 0 };
     }
     const g = groups[key];
-    g.likes += r.likes; g.comments += r.comments; g.reposts += r.reposts; g.followers += r.followers; g.leads += r.leads;
+    g.engagementTotal += r.engagementTotal; g.followers += r.followers; g.leads += r.leads;
     g.platforms.push(r.plat);
     if (!g.weekEnding && r.weekEnding) g.weekEnding = r.weekEnding;
     if (r.createdAt && new Date(r.createdAt) > new Date(g.latestCreatedAt || 0)) g.latestCreatedAt = r.createdAt;
@@ -268,7 +394,7 @@ function aggregateOverall(platformRows, qualRows, seoRows) {
       if (scored.length) seoScore = scored.reduce((a, b) => a + b, 0) / scored.length;
     }
     const breakdown = calcFullScore({
-      likes: g.likes, comments: g.comments, reposts: g.reposts, followers: g.followers, leads: g.leads,
+      engagementTotal: g.engagementTotal, followers: g.followers, leads: g.leads,
       seoScore,
       brandingScore: qual ? qual.brandingScore : null,
       audienceScore: qual ? qual.audienceScore : null,
@@ -518,6 +644,7 @@ window.onload=()=>{
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
   renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderDashboardKPIs(); renderAIReview();
+  onLgPlatformChange();
 };
 
 function switchMainTab(btn,key){
@@ -641,7 +768,7 @@ function renderDashboardKPIs(){
   if (overallNum) overallNum.textContent=row.score;
   if (window.scoreDonutObj){ window.scoreDonutObj.data.datasets[0].data=[row.score,100-row.score]; window.scoreDonutObj.update(); }
 
-  setStatCard('#page-dashboard','Engagement',(row.likes+row.comments+row.reposts).toLocaleString());
+  setStatCard('#page-dashboard','Engagement',row.engagementTotal.toLocaleString());
   setStatCard('#page-dashboard','Leads Generated',row.leads);
   setStatCard('#page-dashboard','Follower Growth',row.followers);
   setStatCard('#page-dashboard','SEO Performance',row.seoScore!=null?row.seoScore+'%':'—');
@@ -686,12 +813,12 @@ function renderLogTable(){
   const t=document.getElementById('engLogTable');
   // Ensure manager name is always correct for brand
   logData.forEach(r => { if(brandManagers[r.brand]) r.mgr = brandManagers[r.brand]; });
-  t.innerHTML=`<thead><tr><th>Start</th><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${fmtDateShort(r.weekStart)}</td><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.reposts}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  t.innerHTML=`<thead><tr><th>Start</th><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th><th>Details</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${fmtDateShort(r.weekStart)}</td><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td style="color:var(--sub2);font-size:12px">${fmtRawMetrics(r.rawMetrics)}</td></tr>`).join('')}</tbody>`;
 }
 
 // Overall performance log — all 7 KPIs combined across platforms, per brand per week.
 function renderReportsTable(){
-  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${overallData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${(r.likes+r.comments+r.reposts).toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${overallData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
 }
 
 // Platform Log Tracker — groups the raw per-platform rows by the same
@@ -702,7 +829,7 @@ function renderPlatformTracker(){
   const container = document.getElementById('platformTracker');
   if (!container) return;
 
-  const ALL_PLATFORMS = ['Facebook','Instagram','Twitter/X','LinkedIn'];
+  const ALL_PLATFORMS = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
   const groups = {};
   logData.forEach(r => {
     const key = r.brand + '||' + r.wk;
@@ -740,8 +867,8 @@ function renderPlatformTracker(){
           <div style="text-align:right">${overall ? `<div style="font-size:10px;color:var(--sub2);text-transform:uppercase;letter-spacing:.4px">Week's Overall Score</div><span style="font-weight:800;font-size:15px">${overall.score}</span> <span style="font-weight:700;color:${overall.score>=80?'var(--green)':overall.score>=70?'var(--amber)':'var(--red)'}">${overall.grade}</span>` : ''}</div>
         </div>
         <div style="margin-bottom:10px">${platformPills}${extraPills}</div>
-        <table class="sp-table"><thead><tr><th>Platform</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>
-          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.reposts}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}
+        <table class="sp-table"><thead><tr><th>Platform</th><th>Engagement</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th><th>Details</th></tr></thead><tbody>
+          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td style="color:var(--sub2);font-size:12px">${fmtRawMetrics(r.rawMetrics)}</td></tr>`).join('')}
         </tbody></table>
       </div>`;
   }).join('');
@@ -784,12 +911,22 @@ async function submitLog(){
   const weekEndingVal = weekEndEl ? weekEndEl.value : '';
   const weekLabel = getWeekLabel(weekEndingVal);
 
-  const likes = +document.getElementById('lgLikes').value || 0;
-  const comments = +document.getElementById('lgComments').value || 0;
-  const reposts = +document.getElementById('lgReposts').value || 0;
-  const followers = +document.getElementById('lgFollowers').value || 0;
+  // Read this platform's specific fields (Facebook/LinkedIn/Twitter/TikTok/
+  // Instagram/YouTube each have their own set — see PLATFORM_FIELDS) and map
+  // them into the raw values object the scoring function understands, plus a
+  // raw_metrics object (keyed by human label) for display in the log tables.
+  const platformFieldDefs = PLATFORM_FIELDS[platform] || [];
+  const rawValues = {};
+  const rawMetrics = {};
+  platformFieldDefs.forEach(f => {
+    const el = document.getElementById('pf_' + f.key);
+    const val = el ? (+el.value || 0) : 0;
+    rawValues[f.key] = val;
+    rawMetrics[f.label] = val;
+  });
+  const { engagement: engagementTotal, followerGrowth: followers } = getEngagementAndFollowers(platform, rawValues);
   const leads = +document.getElementById('lgLeads').value || 0;
-  const score = calcScore({ likes, comments, reposts, followers, leads });
+  const score = calcScore({ engagementTotal, followers, leads });
   const grade = gradeFor(score);
 
   // Resubmitting the same platform for a week that's already logged updates
@@ -809,7 +946,7 @@ async function submitLog(){
   if (submitBtn) { submitBtn.textContent = 'Saving...'; submitBtn.disabled = true; }
 
   try {
-    const fields = { likes, comments, reposts, followers, leads, score, grade, week_start: weekStartVal || null, week_ending: weekEndingVal || null };
+    const fields = { likes: 0, comments: 0, reposts: 0, engagement_total: engagementTotal, followers, leads, score, grade, raw_metrics: rawMetrics, week_start: weekStartVal || null, week_ending: weekEndingVal || null };
     if (existing) {
       if (existing._id) await updateWeeklyLog(existing._id, fields);
     } else {
@@ -832,10 +969,11 @@ async function submitLog(){
     await refreshAllData();
     closeModal('logModal');
     showToast(existing ? `${platform} updated for ${weekLabel}` : `${platform} logged for ${weekLabel}`);
-    ['lgLikes','lgComments','lgReposts','lgFollowers','lgLeads','lgBrandingScore','lgAudienceScore','lgCommScore'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    ['lgLeads','lgBrandingScore','lgAudienceScore','lgCommScore'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     if (weekEndEl) weekEndEl.value = '';
     if (weekStartEl) weekStartEl.value = '';
+    renderPlatformFieldInputs(platform);
   } catch (e) {
     console.error(e);
     showToast('Could not sync — check connection');
