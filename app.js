@@ -197,6 +197,15 @@ function getEngagementAndFollowers(platform, v) {
   }
 }
 
+// Which raw_metrics label represents each platform's "Total Followers"-style
+// snapshot and "Impressions"-style reach number. Field names aren't
+// identical across platforms (Instagram/TikTok call it "Followers" not
+// "Total Followers"; Facebook/Instagram/TikTok report "Views" instead of
+// "Impressions"), so this maps each platform to whichever label it actually
+// has, letting the Platform Totals charts show all 6 platforms consistently.
+const TOTAL_FOLLOWERS_LABEL = { 'Facebook': 'Total Followers', 'LinkedIn': 'Total Followers', 'Twitter': 'Total Followers', 'TikTok': 'Followers', 'Instagram': 'Followers', 'YouTube': 'Subscribers' };
+const IMPRESSIONS_LABEL = { 'Facebook': 'Views', 'LinkedIn': 'Impressions', 'Twitter': 'Impressions', 'TikTok': 'Views', 'Instagram': 'Views', 'YouTube': 'Impressions' };
+
 // Formats a stored raw_metrics object (keyed by human-readable label, e.g.
 // {"Views": 4663, "Shares": 26}) into a compact "Label: value · Label: value"
 // string for table "Details" columns. Skips zero/blank values to stay short.
@@ -555,6 +564,7 @@ async function refreshAllData() {
   renderLogTable();
   renderReportsTable();
   renderPlatformTracker();
+  renderPlatformTotalsCharts();
   renderSEOTable();
   renderLBTable();
   renderMiniLeaderboard();
@@ -643,7 +653,7 @@ window.onload=()=>{
   // Leaderboard chart
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
-  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderDashboardKPIs(); renderAIReview();
+  renderLBTable(); renderMiniLeaderboard(); renderSEOTable(); renderLogTable(); renderReportsTable(); renderPlatformTracker(); renderPlatformTotalsCharts(); renderDashboardKPIs(); renderAIReview();
   onLgPlatformChange();
 };
 
@@ -872,6 +882,56 @@ function renderPlatformTracker(){
         </tbody></table>
       </div>`;
   }).join('');
+}
+
+// Platform Totals charts (Reports page) — one horizontal bar per metric,
+// broken down across the 6 platforms. Uses each platform's most recently
+// logged row (across all brands) so "Total Followers" reflects a current
+// snapshot rather than double-counting past weeks.
+const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
+const PLATFORM_TOTALS_COLOR = '#0d9488';
+
+function latestRowForPlatform(platform) {
+  return logData
+    .filter(r => r.plat === platform)
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0] || null;
+}
+
+function upsertHBarChart(canvasId, storeKey, labels, data, chartLabel) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (window[storeKey]) {
+    window[storeKey].data.labels = labels;
+    window[storeKey].data.datasets[0].data = data;
+    window[storeKey].update();
+    return;
+  }
+  window[storeKey] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: chartLabel, data, backgroundColor: PLATFORM_TOTALS_COLOR, borderRadius: 6 }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: tt },
+      scales: { x: { grid: gr, ticks: ch, beginAtZero: true }, y: { grid: { display: false }, ticks: ch } }
+    }
+  });
+}
+
+function renderPlatformTotalsCharts() {
+  const weeklyFollowers = [], totalFollowers = [], impressions = [], leads = [];
+  PLATFORM_TOTALS_ORDER.forEach(p => {
+    const row = latestRowForPlatform(p);
+    weeklyFollowers.push(row ? row.followers : 0);
+    leads.push(row ? row.leads : 0);
+    const raw = row ? row.rawMetrics || {} : {};
+    totalFollowers.push(raw[TOTAL_FOLLOWERS_LABEL[p]] || 0);
+    impressions.push(raw[IMPRESSIONS_LABEL[p]] || 0);
+  });
+  upsertHBarChart('platWeeklyFollowersChart', 'platWeeklyFollowersChartObj', PLATFORM_TOTALS_ORDER, weeklyFollowers, 'Weekly Followers');
+  upsertHBarChart('platTotalFollowersChart', 'platTotalFollowersChartObj', PLATFORM_TOTALS_ORDER, totalFollowers, 'Total Followers');
+  upsertHBarChart('platImpressionsChart', 'platImpressionsChartObj', PLATFORM_TOTALS_ORDER, impressions, 'Impressions');
+  upsertHBarChart('platLeadsChart', 'platLeadsChartObj', PLATFORM_TOTALS_ORDER, leads, 'Leads');
 }
 
 function showPage(id,nav){
