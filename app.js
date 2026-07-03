@@ -114,6 +114,14 @@ function getWeekLabel(dateStr) {
   return 'Wk of ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Short "Jun 26" style formatting for the Week Start date, used anywhere the
+// log tables show the full week range instead of just the week-ending label.
+function fmtDateShort(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 // Composite score from the quantifiable KPIs this form actually collects
 // (Engagement 20%, Leads 25%, Followers 10% = 55% of the full weighting
 // model). Rescaled to a 0-100 scale since SEO/Branding/Audience/Communication
@@ -185,6 +193,7 @@ function gradeFor(score) {
 function mapRowToLogEntry(row) {
   return {
     wk: row.week_label,
+    weekStart: row.week_start,
     weekEnding: row.week_ending,
     mgr: row.manager,
     brand: row.brand,
@@ -370,6 +379,11 @@ function applyRole(user) {
         item.style.display = 'none';
       }
     });
+
+    // KPI Targets & Weights is Admin-only — managers never get access to
+    // change scoring targets.
+    const settingsNav = document.getElementById('navSettingsItem');
+    if (settingsNav) settingsNav.style.display = 'none';
 
     // Update header subtitle to reflect locked brand
     document.querySelectorAll('.hc-sub').forEach(el => {
@@ -672,7 +686,7 @@ function renderLogTable(){
   const t=document.getElementById('engLogTable');
   // Ensure manager name is always correct for brand
   logData.forEach(r => { if(brandManagers[r.brand]) r.mgr = brandManagers[r.brand]; });
-  t.innerHTML=`<thead><tr><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.reposts}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  t.innerHTML=`<thead><tr><th>Start</th><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Likes</th><th>Comments</th><th>Reposts</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${fmtDateShort(r.weekStart)}</td><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.likes.toLocaleString()}</td><td>${r.comments}</td><td>${r.reposts}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
 }
 
 // Overall performance log — all 7 KPIs combined across platforms, per brand per week.
@@ -692,7 +706,8 @@ function renderPlatformTracker(){
   const groups = {};
   logData.forEach(r => {
     const key = r.brand + '||' + r.wk;
-    if (!groups[key]) groups[key] = { brand: r.brand, wk: r.wk, mgr: r.mgr, rows: [], latestCreatedAt: r.createdAt || 0 };
+    if (!groups[key]) groups[key] = { brand: r.brand, wk: r.wk, weekStart: r.weekStart, mgr: r.mgr, rows: [], latestCreatedAt: r.createdAt || 0 };
+    if (!groups[key].weekStart && r.weekStart) groups[key].weekStart = r.weekStart;
     groups[key].rows.push(r);
     if (r.createdAt && new Date(r.createdAt) > new Date(groups[key].latestCreatedAt || 0)) groups[key].latestCreatedAt = r.createdAt;
   });
@@ -718,7 +733,7 @@ function renderPlatformTracker(){
       <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
           <div>
-            <span style="font-weight:800;font-size:14px;color:var(--navy)">${g.wk}</span>
+            <span style="font-weight:800;font-size:14px;color:var(--navy)">${g.weekStart ? fmtDateShort(g.weekStart)+' – ' : ''}${g.wk.replace('Wk of ','')}</span>
             <span class="pill pill-blue" style="margin-left:8px">${g.brand}</span>
             <span style="color:var(--sub2);font-size:12px;margin-left:6px">${g.mgr}</span>
           </div>
@@ -733,6 +748,12 @@ function renderPlatformTracker(){
 }
 
 function showPage(id,nav){
+  // KPI Targets & Weights is Admin-only. Block managers even if they reach
+  // this some other way than clicking the (already-hidden) nav item.
+  if (id === 'settings' && currentUser && currentUser.role !== 'admin') {
+    showToast('Only Admin can change KPI Targets');
+    return;
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
@@ -757,6 +778,8 @@ async function submitLog(){
 
   const platformEl = document.getElementById('lgPlatform');
   const platform = platformEl ? platformEl.value : 'All Platforms';
+  const weekStartEl = document.getElementById('lgWeekStart');
+  const weekStartVal = weekStartEl ? weekStartEl.value : '';
   const weekEndEl = document.getElementById('lgWeekEnd');
   const weekEndingVal = weekEndEl ? weekEndEl.value : '';
   const weekLabel = getWeekLabel(weekEndingVal);
@@ -786,7 +809,7 @@ async function submitLog(){
   if (submitBtn) { submitBtn.textContent = 'Saving...'; submitBtn.disabled = true; }
 
   try {
-    const fields = { likes, comments, reposts, followers, leads, score, grade, week_ending: weekEndingVal || null };
+    const fields = { likes, comments, reposts, followers, leads, score, grade, week_start: weekStartVal || null, week_ending: weekEndingVal || null };
     if (existing) {
       if (existing._id) await updateWeeklyLog(existing._id, fields);
     } else {
@@ -812,6 +835,7 @@ async function submitLog(){
     ['lgLikes','lgComments','lgReposts','lgFollowers','lgLeads','lgBrandingScore','lgAudienceScore','lgCommScore'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     if (weekEndEl) weekEndEl.value = '';
+    if (weekStartEl) weekStartEl.value = '';
   } catch (e) {
     console.error(e);
     showToast('Could not sync — check connection');
@@ -906,6 +930,9 @@ async function submitSEO(){
     if (submitBtn) { submitBtn.textContent = originalText; submitBtn.disabled = false; }
   }
 }
-function saveSettings(){showToast('KPI targets saved');}
+function saveSettings(){
+  if (currentUser && currentUser.role !== 'admin') { showToast('Only Admin can change KPI Targets'); return; }
+  showToast('KPI targets saved');
+}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
 document.querySelectorAll('.modal-overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');}));
