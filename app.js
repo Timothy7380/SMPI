@@ -894,8 +894,8 @@ function renderPlatformTracker(){
           <div style="text-align:right">${overall ? `<div style="font-size:10px;color:var(--sub2);text-transform:uppercase;letter-spacing:.4px">Week's Overall Score</div><span style="font-weight:800;font-size:15px">${overall.score}</span> <span style="font-weight:700;color:${overall.score>=80?'var(--green)':overall.score>=70?'var(--amber)':'var(--red)'}">${overall.grade}</span>` : ''}</div>
         </div>
         <div style="margin-bottom:10px">${platformPills}${extraPills}</div>
-        <table class="sp-table"><thead><tr><th>Platform</th><th>Engagement</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th><th>Details</th></tr></thead><tbody>
-          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td style="color:var(--sub2);font-size:12px">${fmtRawMetrics(r.rawMetrics)}</td></tr>`).join('')}
+        <table class="sp-table"><thead><tr><th>Platform</th><th>Engagement</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th><th>Details</th><th></th></tr></thead><tbody>
+          ${g.rows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td style="color:var(--sub2);font-size:12px">${fmtRawMetrics(r.rawMetrics)}</td><td>${r._id?`<button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="openEditLog('${r._id}')" title="Fix a mistaken number for this platform"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none;margin-right:3px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>`:''}</td></tr>`).join('')}
         </tbody></table>
       </div>`;
   }).join('');
@@ -1425,6 +1425,99 @@ function setLBPeriod(btn,p){document.querySelectorAll('.tab-pill').forEach(t=>t.
 function selKPI(card,k){document.querySelectorAll('#page-dashboard .stat-card').forEach(c=>c.classList.remove('sel'));card.classList.add('sel');}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// ═══ EDITING AN EXISTING PLATFORM LOG ENTRY ═══
+// Lets a manager/admin fix a mistaken number on an already-submitted
+// platform row (from the Reports page's Platform Log Tracker) instead of
+// creating a confusing duplicate. Reuses the same Log Week modal used for
+// new entries — editingLogId just tells submitLog() to PATCH that specific
+// row instead of matching/inserting by brand+week+platform.
+let editingLogId = null;
+
+function resetLogModalState() {
+  editingLogId = null;
+  const titleEl = document.getElementById('logModalTitle');
+  const subEl = document.getElementById('logModalSub');
+  if (titleEl) titleEl.textContent = 'Log This Week';
+  if (subEl) subEl.textContent = 'Submit weekly performance data for all KPIs';
+  const brandEl = document.getElementById('lgBrand');
+  const platformEl = document.getElementById('lgPlatform');
+  if (brandEl) brandEl.disabled = false;
+  if (platformEl) platformEl.disabled = false;
+}
+
+// Every "Log Week" button in the app calls this (instead of openModal
+// directly) so a previous edit's locked dropdowns/leftover values never
+// bleed into a fresh new-entry submission.
+function openNewLogModal() {
+  resetLogModalState();
+  ['lgWeekStart','lgWeekEnd','lgLeads','lgBrandingScore','lgAudienceScore','lgCommScore','lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const platformEl = document.getElementById('lgPlatform');
+  if (platformEl) renderPlatformFieldInputs(platformEl.value);
+  openModal('logModal');
+}
+
+function cancelLogModal() {
+  resetLogModalState();
+  closeModal('logModal');
+}
+
+// Finds a platform's internal field key for a given human label (reverse of
+// PLATFORM_FIELDS) — needed because raw_metrics is stored keyed by label
+// ("Views", "Total Followers"...) but the form inputs are keyed by field id
+// ("pf_views", "pf_totalFollowers"...).
+function fieldKeyForLabel(platform, label) {
+  const fields = PLATFORM_FIELDS[platform] || [];
+  const match = fields.find(f => f.label === label);
+  return match ? match.key : null;
+}
+
+// Opens the Log Week modal pre-filled with an existing platform log entry
+// so a mistaken number can be fixed in place. Brand and Platform are locked
+// since they define which row gets updated and which fields even apply.
+function openEditLog(id) {
+  const row = logData.find(r => r._id === id);
+  if (!row) { showToast('Could not find that entry'); return; }
+  editingLogId = id;
+
+  const titleEl = document.getElementById('logModalTitle');
+  const subEl = document.getElementById('logModalSub');
+  if (titleEl) titleEl.textContent = 'Edit Log Entry';
+  if (subEl) subEl.textContent = `Editing ${row.plat} · ${row.brand} · ${row.wk}`;
+
+  const brandEl = document.getElementById('lgBrand');
+  const platformEl = document.getElementById('lgPlatform');
+  if (brandEl) {
+    const opt = Array.from(brandEl.options).find(o => o.value.startsWith(row.brand));
+    if (opt) brandEl.value = opt.value;
+    brandEl.disabled = true;
+  }
+  if (platformEl) {
+    platformEl.value = row.plat;
+    platformEl.disabled = true;
+    renderPlatformFieldInputs(row.plat);
+  }
+
+  const weekStartEl = document.getElementById('lgWeekStart');
+  const weekEndEl = document.getElementById('lgWeekEnd');
+  if (weekStartEl) weekStartEl.value = row.weekStart || '';
+  if (weekEndEl) weekEndEl.value = row.weekEnding || '';
+
+  const leadsEl = document.getElementById('lgLeads');
+  if (leadsEl) leadsEl.value = row.leads != null ? row.leads : '';
+
+  (PLATFORM_FIELDS[row.plat] || []).forEach(f => {
+    const el = document.getElementById('pf_' + f.key);
+    if (el) el.value = (row.rawMetrics && row.rawMetrics[f.label]) || '';
+  });
+
+  // Branding/Audience/Communication scores+notes apply once per brand per
+  // week (not per platform) — left blank here since blank already means
+  // "don't change" in submitLog(), same as when logging a new entry.
+  ['lgBrandingScore','lgAudienceScore','lgCommScore','lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+  openModal('logModal');
+}
 // Every platform gets its own row for the week (Facebook, Instagram, etc. all
 // log separately). Branding/Audience/Communication scores apply once per
 // brand per week, so they're upserted into weekly_qualitative regardless of
@@ -1462,8 +1555,12 @@ async function submitLog(){
 
   // Resubmitting the same platform for a week that's already logged updates
   // that row instead of creating a duplicate (matches the DB unique index on
-  // brand+week_label+platform).
-  const existing = logData.find(r => r.brand === selBrand && r.wk === weekLabel && r.plat === platform);
+  // brand+week_label+platform). When editingLogId is set (opened via the
+  // Platform Log Tracker's Edit button), we already know exactly which row
+  // to update regardless of what its week label happens to be.
+  const existing = editingLogId
+    ? logData.find(r => r._id === editingLogId)
+    : logData.find(r => r.brand === selBrand && r.wk === weekLabel && r.plat === platform);
 
   const brandingScoreVal = document.getElementById('lgBrandingScore').value;
   const audienceScoreVal = document.getElementById('lgAudienceScore').value;
@@ -1504,6 +1601,7 @@ async function submitLog(){
     ['lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     if (weekEndEl) weekEndEl.value = '';
     if (weekStartEl) weekStartEl.value = '';
+    resetLogModalState();
     renderPlatformFieldInputs(platform);
   } catch (e) {
     console.error(e);
