@@ -819,6 +819,7 @@ function renderAIReview(){
   const row=getDashboardRow();
   const gradeEl=document.getElementById('aiGradeLetter');
   const ptsEl=document.getElementById('aiPointsText');
+  renderQualitativeNotesSection();
   if (!row){
     if (gradeEl) gradeEl.textContent='—';
     if (ptsEl) ptsEl.textContent='No data logged yet';
@@ -968,7 +969,7 @@ function renderPlatformTotalsCharts() {
 // them, then sums valueFn(row) per platform per week. Rows for the same
 // platform+week from different brands are summed (this is a company-wide
 // view across all brands, not a single-brand snapshot).
-function buildWeeklyPlatformSeries(valueFn, maxWeeks = 6, rows = logData) {
+function buildWeeklyPlatformSeries(valueFn, maxWeeks = 4, rows = logData) {
   const rowsWithBucket = rows.map(r => {
     const bucketDate = weekBucketFromDate(r.weekEnding || r.weekStart || r.createdAt);
     return { row: r, key: weekBucketKey(bucketDate), label: weekBucketLabel(bucketDate), sortDate: bucketDate };
@@ -993,7 +994,10 @@ function renderTrendChart(canvasId, storeKey, weekLabels, series) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v > 0));
-  const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28 }));
+  // barPercentage close to 1 + a lower categoryPercentage packs each week's
+  // platform bars tightly together while leaving a clear visible gap before
+  // the next week's cluster starts — matches the reference layout.
+  const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 }));
   if (window[storeKey]) {
     window[storeKey].data.labels = weekLabels;
     window[storeKey].data.datasets = datasets;
@@ -1108,7 +1112,7 @@ function topPlatformsBy(rows, valueFn, n) {
 
 // Real week-by-week history for a single qualitative field (brandingScore/
 // audienceScore/commScore), bucketed the same weekly way as everything else.
-function buildQualSeries(brand, field, maxWeeks = 8) {
+function buildQualSeries(brand, field, maxWeeks = 4) {
   const withBucket = qualitativeData
     .filter(q => q.brand === brand && q[field] != null)
     .map(q => {
@@ -1148,7 +1152,7 @@ function renderEngagementKPIPage() {
     fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / 6', delta: loggedCount >= 6 ? '✓ All platforms logged' : (6 - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / 6 * 100), progColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)' });
   }
 
-  const series = buildWeeklyPlatformSeries(r => r.engagementTotal || 0, 8, brandRows);
+  const series = buildWeeklyPlatformSeries(r => r.engagementTotal || 0, 4, brandRows);
   renderTrendChart('engChart', 'engChartObj', series.weekLabels, series.series);
   renderEngagementDonut(row, brand);
 }
@@ -1201,7 +1205,7 @@ function renderLeadsKPIPage() {
       }
     }
   }
-  const series = buildWeeklyPlatformSeries(r => r.leads || 0, 8, brandRows);
+  const series = buildWeeklyPlatformSeries(r => r.leads || 0, 4, brandRows);
   renderTrendChart('leadsChart', 'leadsChartObj', series.weekLabels, series.series);
 }
 
@@ -1232,7 +1236,7 @@ function renderFollowersKPIPage() {
       }
     }
   }
-  const series = buildWeeklyPlatformSeries(r => r.followers || 0, 8, brandRows);
+  const series = buildWeeklyPlatformSeries(r => r.followers || 0, 4, brandRows);
   renderTrendChart('flwChart', 'flwChartObj', series.weekLabels, series.series);
 }
 
@@ -1331,7 +1335,7 @@ function buildMainChartSeries(key, brand) {
     return { labels: keys.map(k => k.replace('Wk of ', '')), data: keys.map(k => counts[k]), thr: 15 };
   }
   const valueFn = key === 'eng' ? (r => r.engagementTotal || 0) : key === 'leads' ? (r => r.leads || 0) : (r => r.followers || 0);
-  const series = buildWeeklyPlatformSeries(valueFn, 8, brandRows);
+  const series = buildWeeklyPlatformSeries(valueFn, 4, brandRows);
   const labels = series.weekLabels;
   const data = labels.map((_, i) => PLATFORM_TOTALS_ORDER.reduce((sum, p) => sum + (series.series[p][i] || 0), 0));
   const thr = key === 'eng' ? KPI_TARGETS.engagement : key === 'leads' ? KPI_TARGETS.leads : KPI_TARGETS.followers;
@@ -1357,7 +1361,7 @@ function renderAIHistChart() {
   if (!canvas || !window.aiHistChartObj) return;
   const brand = currentDashboardBrand();
   const rows = overallData.filter(r => r.brand === brand).slice().sort((a, b) => weekBucketFromDate(a.weekEnding || null) - weekBucketFromDate(b.weekEnding || null));
-  const trimmed = rows.slice(-8);
+  const trimmed = rows.slice(-4);
   const labels = trimmed.map(r => weekBucketLabel(weekBucketFromDate(r.weekEnding || null)));
   const data = trimmed.map(r => r.score);
   window.aiHistChartObj.data.labels = labels;
@@ -1451,7 +1455,11 @@ function resetLogModalState() {
 // bleed into a fresh new-entry submission.
 function openNewLogModal() {
   resetLogModalState();
-  ['lgWeekStart','lgWeekEnd','lgLeads','lgBrandingScore','lgAudienceScore','lgCommScore','lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Note: lgBrandNotes/lgAudienceNotes/lgCommNotes now live on the AI Review
+  // page (Branding/Audience/Communication are AI-decided there, not part of
+  // this form anymore) — intentionally NOT touched here so opening a fresh
+  // Log Week entry never clobbers notes someone's mid-typing elsewhere.
+  ['lgWeekStart','lgWeekEnd','lgLeads'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const platformEl = document.getElementById('lgPlatform');
   if (platformEl) renderPlatformFieldInputs(platformEl.value);
   openModal('logModal');
@@ -1511,10 +1519,8 @@ function openEditLog(id) {
     if (el) el.value = (row.rawMetrics && row.rawMetrics[f.label]) || '';
   });
 
-  // Branding/Audience/Communication scores+notes apply once per brand per
-  // week (not per platform) — left blank here since blank already means
-  // "don't change" in submitLog(), same as when logging a new entry.
-  ['lgBrandingScore','lgAudienceScore','lgCommScore','lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Branding/Audience/Communication are no longer part of this form at all
+  // (AI-decided from the AI Review page instead) — nothing to clear here.
 
   openModal('logModal');
 }
@@ -1562,13 +1568,6 @@ async function submitLog(){
     ? logData.find(r => r._id === editingLogId)
     : logData.find(r => r.brand === selBrand && r.wk === weekLabel && r.plat === platform);
 
-  const brandingScoreVal = document.getElementById('lgBrandingScore').value;
-  const audienceScoreVal = document.getElementById('lgAudienceScore').value;
-  const commScoreVal = document.getElementById('lgCommScore').value;
-  const brandNotesVal = document.getElementById('lgBrandNotes').value;
-  const audienceNotesVal = document.getElementById('lgAudienceNotes').value;
-  const commNotesVal = document.getElementById('lgCommNotes').value;
-
   const submitBtn = document.querySelector('#logModal .btn-blue');
   const originalText = submitBtn ? submitBtn.textContent : '';
   if (submitBtn) { submitBtn.textContent = 'Saving...'; submitBtn.disabled = true; }
@@ -1581,24 +1580,14 @@ async function submitLog(){
       await insertWeeklyLog({ week_label: weekLabel, manager: mgrName, brand: selBrand, platform, ...fields });
     }
 
-    // Only touch the shared weekly qualitative row if the manager actually
-    // filled something in — leaving these blank keeps whatever's already saved.
-    const qualFields = {};
-    if (brandingScoreVal !== '') qualFields.branding_score = Math.max(0, Math.min(100, +brandingScoreVal));
-    if (audienceScoreVal !== '') qualFields.audience_score = Math.max(0, Math.min(100, +audienceScoreVal));
-    if (commScoreVal !== '') qualFields.comm_score = Math.max(0, Math.min(100, +commScoreVal));
-    if (brandNotesVal) qualFields.brand_notes = brandNotesVal;
-    if (audienceNotesVal) qualFields.audience_notes = audienceNotesVal;
-    if (commNotesVal) qualFields.comm_notes = commNotesVal;
-    if (Object.keys(qualFields).length) {
-      await upsertQualitative(selBrand, weekLabel, weekEndingVal, qualFields);
-    }
+    // Branding/Audience/Communication scores + notes no longer live on this
+    // form at all — they're entirely AI-decided now, entered and scored
+    // from the AI Review page (see requestAIScoring()/saveQualitativeNotes()).
 
     await refreshAllData();
     closeModal('logModal');
     showToast(existing ? `${platform} updated for ${weekLabel}` : `${platform} logged for ${weekLabel}`);
-    ['lgLeads','lgBrandingScore','lgAudienceScore','lgCommScore'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    ['lgBrandNotes','lgAudienceNotes','lgCommNotes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const leadsEl = document.getElementById('lgLeads'); if (leadsEl) leadsEl.value = '';
     if (weekEndEl) weekEndEl.value = '';
     if (weekStartEl) weekStartEl.value = '';
     resetLogModalState();
@@ -1617,12 +1606,21 @@ async function submitLog(){
 // with the result so the manager can review before submitting.
 // Requires the Edge Function to be deployed with an ANTHROPIC_API_KEY secret
 // set — see supabase/functions/score-qualitative/index.ts for setup steps.
+// ═══ QUALITATIVE KPIs — AI Review page ═══
+// Branding/Audience/Communication used to be manually scored + noted right
+// in the Log Week form. They're now entirely AI-decided from here instead:
+// write the notes, click "Score With AI", and the resulting scores save
+// straight to weekly_qualitative (no separate "Submit" step needed).
+// Scoped to whichever brand+week the rest of the AI Review page is showing
+// (currentDashboardBrand() + the latest logged week for that brand).
+
+function qualNotesTargetWeek() {
+  const row = getDashboardRow();
+  return { brand: currentDashboardBrand(), weekLabel: row ? row.wk : getWeekLabel(), weekEnding: row ? row.weekEnding : null, row };
+}
+
 async function requestAIScoring(){
-  const brandSelectEl = document.getElementById('lgBrand');
-  const selBrand = brandSelectEl ? brandSelectEl.value.replace(/ \(.*\)/,'') : (currentUser && currentUser.brand) || 'GeoInfotech';
-  const weekEndEl = document.getElementById('lgWeekEnd');
-  const weekEndingVal = weekEndEl ? weekEndEl.value : '';
-  const weekLabel = getWeekLabel(weekEndingVal);
+  const { brand: selBrand, weekLabel, weekEnding: weekEndingVal } = qualNotesTargetWeek();
 
   const brandNotes = document.getElementById('lgBrandNotes').value;
   const audienceNotes = document.getElementById('lgAudienceNotes').value;
@@ -1650,16 +1648,65 @@ async function requestAIScoring(){
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'AI scoring failed');
 
-    document.getElementById('lgBrandingScore').value = data.branding_score;
-    document.getElementById('lgAudienceScore').value = data.audience_score;
-    document.getElementById('lgCommScore').value = data.comm_score;
-    showToast('AI scored — review and submit');
+    await upsertQualitative(selBrand, weekLabel, weekEndingVal, {
+      branding_score: data.branding_score,
+      audience_score: data.audience_score,
+      comm_score: data.comm_score,
+      ...(brandNotes ? { brand_notes: brandNotes } : {}),
+      ...(audienceNotes ? { audience_notes: audienceNotes } : {}),
+      ...(commNotes ? { comm_notes: commNotes } : {})
+    });
+    await refreshAllData();
+    showToast('AI scored and saved for ' + weekLabel);
   } catch (e) {
     console.error(e);
-    showToast('AI scoring isn\'t set up yet — enter scores manually');
+    showToast('AI scoring isn\'t set up yet — try again later');
   } finally {
     if (btn) { btn.textContent = originalText; btn.disabled = false; }
   }
+}
+
+// Fallback for when the AI Edge Function isn't available yet — saves the
+// written notes on their own so nothing is lost while waiting to be scored.
+async function saveQualitativeNotes(){
+  const { brand: selBrand, weekLabel, weekEnding: weekEndingVal } = qualNotesTargetWeek();
+  const brandNotes = document.getElementById('lgBrandNotes').value;
+  const audienceNotes = document.getElementById('lgAudienceNotes').value;
+  const commNotes = document.getElementById('lgCommNotes').value;
+  if (!brandNotes && !audienceNotes && !commNotes) { showToast('Nothing to save yet'); return; }
+  try {
+    const fields = {};
+    if (brandNotes) fields.brand_notes = brandNotes;
+    if (audienceNotes) fields.audience_notes = audienceNotes;
+    if (commNotes) fields.comm_notes = commNotes;
+    await upsertQualitative(selBrand, weekLabel, weekEndingVal, fields);
+    await refreshAllData();
+    showToast('Notes saved for ' + weekLabel);
+  } catch (e) {
+    console.error(e);
+    showToast('Could not save — check connection');
+  }
+}
+
+// Fills the notes textareas + score displays for whichever brand/week is
+// currently in view. Skips any field the user is actively typing in so a
+// periodic auto-refresh (every 20s) never clobbers an in-progress note.
+function renderQualitativeNotesSection(){
+  const { row } = qualNotesTargetWeek();
+  [
+    ['lgBrandNotes', row && row.qual && row.qual.brandNotes],
+    ['lgAudienceNotes', row && row.qual && row.qual.audienceNotes],
+    ['lgCommNotes', row && row.qual && row.qual.commNotes]
+  ].forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el) el.value = val || '';
+  });
+  const b = document.getElementById('qualBrandScoreDisplay');
+  const a = document.getElementById('qualAudienceScoreDisplay');
+  const c = document.getElementById('qualCommScoreDisplay');
+  if (b) b.textContent = row && row.brandingScore != null ? row.brandingScore + '/100' : '—';
+  if (a) a.textContent = row && row.audienceScore != null ? row.audienceScore + '/100' : '—';
+  if (c) c.textContent = row && row.commScore != null ? row.commScore + '/100' : '—';
 }
 
 async function submitSEO(){
