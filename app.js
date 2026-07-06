@@ -74,6 +74,34 @@ async function fetchSeoPosts() {
   }
 }
 
+// Fetch the persisted Platform Weekly Target "actuals" (one row per
+// brand+week+platform, judged against the static PLATFORM_WEEKLY_TARGETS).
+async function fetchPlatformActuals() {
+  try {
+    const rows = await sbFetch('platform_weekly_actuals?select=*&order=created_at.desc');
+    return rows || [];
+  } catch (e) {
+    console.error('Failed to fetch platform weekly actuals:', e);
+    return null;
+  }
+}
+
+async function insertPlatformActual(entry) {
+  return sbFetch('platform_weekly_actuals', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify(entry)
+  });
+}
+
+async function updatePlatformActual(id, fields) {
+  return sbFetch(`platform_weekly_actuals?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify(fields)
+  });
+}
+
 async function insertSeoPost(entry) {
   return sbFetch('seo_posts', {
     method: 'POST',
@@ -98,6 +126,21 @@ async function upsertQualitative(brand, weekLabel, weekEnding, fields) {
     headers: { 'Prefer': 'return=representation' },
     body: JSON.stringify({ brand, week_label: weekLabel, week_ending: weekEnding || null, ...fields })
   });
+}
+
+// One "actual" number per brand+week+platform, judged against the static
+// PLATFORM_WEEKLY_TARGETS. Always logs against THIS calendar week (same
+// Sunday-ending weekly bucketing used everywhere else in the app) — update
+// the existing row if this platform already has an actual for this week,
+// else create it.
+async function upsertPlatformActual(brand, platform, actualValue) {
+  const weekLabel = getWeekLabel();
+  const weekEnding = weekBucketKey(weekBucketFromDate());
+  const existing = platformActualsData.find(r => r.brand === brand && r.wk === weekLabel && r.plat === platform);
+  if (existing && existing.id) {
+    return updatePlatformActual(existing.id, { actual: actualValue });
+  }
+  return insertPlatformActual({ brand, week_label: weekLabel, week_ending: weekEnding, platform, actual: actualValue });
 }
 
 // ═══ SCORING ALGORITHM ═══
@@ -401,6 +444,19 @@ function mapRowToQualEntry(row) {
   };
 }
 
+// Map a platform_weekly_actuals row
+function mapRowToTargetEntry(row) {
+  return {
+    id: row.id,
+    brand: row.brand,
+    wk: row.week_label,
+    weekEnding: row.week_ending,
+    plat: row.platform,
+    actual: row.actual != null ? row.actual : 0,
+    createdAt: row.created_at
+  };
+}
+
 // Map a seo_posts row (persisted blog post log)
 function mapRowToSeoEntry(row) {
   return {
@@ -583,9 +639,9 @@ let refreshTimer = null;
 // table/chart/card that depends on real data (Weekly Log, Weekly Reports,
 // SEO log, Leaderboard, Dashboard KPIs, AI Review).
 async function refreshAllData() {
-  const [rawLogs, rawQual, rawSeo] = await Promise.all([fetchWeeklyLogs(), fetchQualitative(), fetchSeoPosts()]);
+  const [rawLogs, rawQual, rawSeo, rawTargets] = await Promise.all([fetchWeeklyLogs(), fetchQualitative(), fetchSeoPosts(), fetchPlatformActuals()]);
 
-  if (rawLogs === null && rawQual === null && rawSeo === null) {
+  if (rawLogs === null && rawQual === null && rawSeo === null && rawTargets === null) {
     showToast('Offline — showing local data');
     return;
   }
@@ -593,12 +649,14 @@ async function refreshAllData() {
   logData = (rawLogs || []).map(mapRowToLogEntry);
   qualitativeData = (rawQual || []).map(mapRowToQualEntry);
   seoPostsData = (rawSeo || []).map(mapRowToSeoEntry);
+  platformActualsData = (rawTargets || []).map(mapRowToTargetEntry);
 
   // Managers only see their own brand's data
   if (currentUser && currentUser.role === 'manager') {
     logData = logData.filter(r => r.brand === currentUser.brand);
     qualitativeData = qualitativeData.filter(r => r.brand === currentUser.brand);
     seoPostsData = seoPostsData.filter(r => r.brand === currentUser.brand);
+    platformActualsData = platformActualsData.filter(r => r.brand === currentUser.brand);
   }
 
   overallData = aggregateOverall(logData, qualitativeData, seoPostsData);
@@ -608,6 +666,7 @@ async function refreshAllData() {
   renderPlatformTracker();
   renderPlatformTotalsCharts();
   renderTrendAnalysis();
+  renderPlatformTargets();
   renderAllKPIPages();
   renderSEOTable();
   renderLBTable();
@@ -651,6 +710,13 @@ let logData = [];          // raw per-platform weekly_logs rows
 let qualitativeData = [];  // per-brand-per-week Branding/Audience/Comm scores
 let seoPostsData = [];     // persisted blog post log
 let overallData = [];      // aggregated per-brand-per-week Overall rows (newest first)
+let platformActualsData = []; // per-brand-per-week-per-platform "actual" numbers logged against PLATFORM_WEEKLY_TARGETS
+
+// Static weekly output target per platform — fixed per the spec ("the
+// weekly target for each social media will be static"), not user-editable.
+// Whatever number a manager logs as that week's "actual" gets judged
+// against this to decide Met/Missed.
+const PLATFORM_WEEKLY_TARGETS = { 'Facebook': 100, 'LinkedIn': 100, 'Twitter': 10, 'TikTok': 50, 'Instagram': 50, 'YouTube': 50 };
 
 window.onload=()=>{
   // Score donut
@@ -1097,6 +1163,182 @@ function renderTrendAnalysis() {
   renderTrendTable('trendImpressionsTable', im.weekLabels, im.series);
 }
 
+// ═══ PLATFORM WEEKLY TARGETS — static target per platform, manager logs the
+// actual number achieved each week, app judges Met/Missed. Scoped to
+// currentDashboardBrand() (the manager's own brand, or whichever brand pill
+// Admin has selected) — same brand concept the KPI detail pages already use,
+// since each brand runs its own accounts against its own targets. ═══
+
+// Reads the input for one platform's "This Week's Actual" cell and saves it.
+async function saveTargetActual(platform) {
+  const el = document.getElementById('tgtActual_' + platform);
+  if (!el) return;
+  const val = +el.value;
+  if (el.value === '' || isNaN(val) || val < 0) { showToast('Enter a valid number first'); return; }
+
+  const brand = currentDashboardBrand();
+  const btn = document.getElementById('tgtSaveBtn_' + platform);
+  const originalText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+
+  try {
+    await upsertPlatformActual(brand, platform, val);
+    await refreshAllData();
+    const target = PLATFORM_WEEKLY_TARGETS[platform];
+    showToast(`${platform}: ${val}/${target} logged — ${val >= target ? 'target met ✓' : 'below target'}`);
+  } catch (e) {
+    console.error(e);
+    showToast('Could not save — check connection');
+  } finally {
+    if (btn) { btn.textContent = originalText; btn.disabled = false; }
+  }
+}
+
+// The live "This Week" editor table — one row per platform, target is
+// static, actual is typed in and saved individually per platform.
+function renderPlatformTargetsCurrentTable() {
+  const container = document.getElementById('platformTargetsCurrent');
+  if (!container) return;
+  // Never rebuild while a manager is actively typing an actual value —
+  // otherwise the 20s auto-refresh poll would wipe out in-progress input
+  // (same class of bug already fixed for the AI Review qualitative notes).
+  const active = document.activeElement;
+  if (active && active.id && active.id.startsWith('tgtActual_')) return;
+
+  const brand = currentDashboardBrand();
+  const weekLabel = getWeekLabel();
+  const rows = PLATFORM_TOTALS_ORDER.map(p => {
+    const target = PLATFORM_WEEKLY_TARGETS[p];
+    const row = platformActualsData.find(r => r.brand === brand && r.wk === weekLabel && r.plat === p);
+    const actual = row ? row.actual : null;
+    const pct = actual != null ? Math.round(actual / target * 100) : null;
+    const statusHtml = actual == null
+      ? `<span class="pill" style="background:var(--bg);color:var(--sub2)">Not logged yet</span>`
+      : pct >= 100
+        ? `<span class="pill pill-met">✓ Met · ${pct}%</span>`
+        : `<span class="pill pill-miss">✗ ${pct}% of target</span>`;
+    return `<tr>
+      <td><span class="pill pill-blue">${p}</span></td>
+      <td style="font-weight:700">${target}</td>
+      <td><input type="number" min="0" class="tbl-input" id="tgtActual_${p}" placeholder="e.g. ${target}" value="${actual != null ? actual : ''}"></td>
+      <td>${statusHtml}</td>
+      <td><button class="btn-outline" style="font-size:11px;padding:6px 12px" id="tgtSaveBtn_${p}" onclick="saveTargetActual('${p}')">Save</button></td>
+    </tr>`;
+  }).join('');
+
+  container.innerHTML = `<thead><tr><th>Platform</th><th>Weekly Target</th><th>This Week's Actual</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody>`;
+}
+
+// Groups platformActualsData into real calendar weeks (same weekBucketFromDate
+// bucketing as buildWeeklyPlatformSeries) and expresses each platform's
+// actual as a % of its own static target, so every platform is comparable
+// on one 0–100+ scale despite having very different raw targets. Missing
+// weeks are left as null (not 0) so the chart shows a gap instead of a
+// misleading "0% achieved" bar for weeks nothing was logged at all.
+function buildTargetAchievementSeries(maxWeeks = 4) {
+  const brand = currentDashboardBrand();
+  const rows = platformActualsData.filter(r => r.brand === brand);
+  const rowsWithBucket = rows.map(r => {
+    const bucketDate = weekBucketFromDate(r.weekEnding || r.createdAt);
+    return { row: r, key: weekBucketKey(bucketDate), label: weekBucketLabel(bucketDate), sortDate: bucketDate };
+  });
+
+  const weekMeta = {};
+  rowsWithBucket.forEach(rb => { if (!weekMeta[rb.key]) weekMeta[rb.key] = { date: rb.sortDate, label: rb.label }; });
+  let weekKeys = Object.keys(weekMeta).sort((a, b) => weekMeta[a].date - weekMeta[b].date);
+  if (weekKeys.length > maxWeeks) weekKeys = weekKeys.slice(weekKeys.length - maxWeeks);
+
+  const series = {};
+  PLATFORM_TOTALS_ORDER.forEach(p => { series[p] = weekKeys.map(() => null); });
+  rowsWithBucket.forEach(rb => {
+    const wi = weekKeys.indexOf(rb.key);
+    if (wi === -1 || !series[rb.row.plat]) return;
+    const target = PLATFORM_WEEKLY_TARGETS[rb.row.plat];
+    series[rb.row.plat][wi] = Math.round((rb.row.actual || 0) / target * 100);
+  });
+  return { weekLabels: weekKeys.map(k => weekMeta[k].label), series };
+}
+
+// Grouped bar chart, styled identically to the other Trend Analysis
+// comparison charts (tight per-week platform clustering, wide/short
+// aspectRatio) plus a dashed "100% Target" reference line so hitting target
+// is a single glance — bars crossing the line = met that week.
+function renderTargetAchievementChart(canvasId, storeKey, weekLabels, series) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
+  const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 }));
+  const targetLine = { label: '100% Target', type: 'line', data: weekLabels.map(() => 100), borderColor: '#d97706', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false };
+  const allDatasets = [...datasets, targetLine];
+
+  if (window[storeKey]) {
+    window[storeKey].data.labels = weekLabels;
+    window[storeKey].data.datasets = allDatasets;
+    window[storeKey].update();
+    return;
+  }
+  window[storeKey] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: weekLabels, datasets: allDatasets },
+    options: {
+      responsive: true,
+      aspectRatio: 2.3,
+      plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 11, family: 'Inter' }, boxWidth: 10, padding: 12 } }, tooltip: tt },
+      scales: { x: { grid: { display: false }, ticks: ch }, y: { grid: gr, ticks: { ...ch, callback: v => v + '%' }, beginAtZero: true } }
+    }
+  });
+}
+
+// Highlights panel — platforms furthest below target surface first (the
+// ones that most need attention), matching the "needs a look" framing the
+// other Trend Analysis Highlights panels use, just for target-achievement
+// instead of week-over-week swings.
+function renderTargetInsights(containerId, weekLabels, series) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const n = weekLabels.length;
+  const items = [];
+  PLATFORM_TOTALS_ORDER.forEach(p => {
+    const latest = series[p][n - 1];
+    if (latest == null) return;
+    items.push({ platform: p, pct: latest });
+  });
+  if (!items.length) {
+    container.innerHTML = `<div style="padding:8px 0;color:var(--sub2);font-size:12px">No actuals logged yet this week.</div>`;
+    return;
+  }
+  items.sort((a, b) => a.pct - b.pct);
+  const latestWeekLabel = weekLabels[n - 1] || 'This week';
+  container.innerHTML = items.map(it => {
+    const c = PLATFORM_COLORS[it.platform];
+    const met = it.pct >= 100;
+    const sub = met ? `${latestWeekLabel} · ✓ Target met` : `${latestWeekLabel} · ${100 - it.pct}% short of target`;
+    return `<div class="ai-box" style="background:${c.bgVar};border-left-color:${c.textVar}"><div class="ai-box-title" style="color:${c.textVar}">${it.platform}</div><div class="ai-box-body"><strong style="font-size:14px;color:var(--navy)">${it.pct}%</strong> of weekly target<br>${sub}</div></div>`;
+  }).join('');
+}
+
+// Weekly detail table — Platform rows × week columns, each cell the %
+// of target hit that week (green ≥100%, red otherwise), same shape as the
+// other Trend Analysis detail tables.
+function renderTargetDetailTable(tableId, weekLabels, series) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
+  if (!platforms.length) {
+    table.innerHTML = `<tbody><tr><td style="padding:14px;color:var(--sub2);font-size:13px">No actuals logged yet.</td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = `<thead><tr><th>Platform</th><th>Weekly Target</th>${weekLabels.map(w => `<th>${w}</th>`).join('')}</tr></thead><tbody>${platforms.map(p => `<tr><td><span class="pill pill-blue">${p}</span></td><td style="font-weight:700">${PLATFORM_WEEKLY_TARGETS[p]}</td>${series[p].map(v => v == null ? `<td style="color:var(--sub2)">—</td>` : `<td><span style="font-weight:700;color:${v >= 100 ? 'var(--green)' : 'var(--red)'}">${v}%</span></td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+function renderPlatformTargets() {
+  renderPlatformTargetsCurrentTable();
+  const ta = buildTargetAchievementSeries();
+  renderTargetAchievementChart('targetAchievementChart', 'targetAchievementChartObj', ta.weekLabels, ta.series);
+  renderTargetInsights('targetAchievementInsights', ta.weekLabels, ta.series);
+  renderTargetDetailTable('targetAchievementTable', ta.weekLabels, ta.series);
+}
+
 // ═══ KPI DETAIL PAGES — wire real Log Week data everywhere ═══
 // Every stat-card below is mutated in place (label/value/delta/threshold/
 // progress bar/icon color) rather than having its HTML replaced, so none of
@@ -1439,7 +1681,7 @@ function showPage(id,nav){
 }
 function toggleSB(){document.getElementById('sidebar').classList.toggle('open');}
 function setPeriod(btn){document.querySelectorAll('.pchip').forEach(c=>c.classList.remove('active'));btn.classList.add('active');showToast('Period: '+btn.textContent);}
-function setBrand(btn,b){document.querySelectorAll('.bpill').forEach(c=>c.classList.remove('active'));btn.classList.add('active');selectedDashboardBrand=b;renderDashboardKPIs();renderAIReview();renderAllKPIPages();showToast('Switched to '+b);}
+function setBrand(btn,b){document.querySelectorAll('.bpill').forEach(c=>c.classList.remove('active'));btn.classList.add('active');selectedDashboardBrand=b;renderDashboardKPIs();renderAIReview();renderAllKPIPages();renderPlatformTargets();showToast('Switched to '+b);}
 function setLBPeriod(btn,p){document.querySelectorAll('.tab-pill').forEach(t=>t.classList.remove('active'));btn.classList.add('active');showToast('Leaderboard: '+btn.textContent);}
 function selKPI(card,k){document.querySelectorAll('#page-dashboard .stat-card').forEach(c=>c.classList.remove('sel'));card.classList.add('sel');}
 function openModal(id){document.getElementById(id).classList.add('open');}

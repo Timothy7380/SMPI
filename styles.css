@@ -152,6 +152,10 @@ canvas { display:block; }
    stretching the table indefinitely or spilling past the card. Hover shows
    the full text via the cell's title attribute. */
 .sp-table td.truncate-cell{overflow:hidden;text-overflow:ellipsis;cursor:default;}
+/* Compact inline input for typing a number directly into a table cell
+   (e.g. Platform Weekly Targets' "This Week's Actual" column). */
+.tbl-input{width:90px;padding:6px 9px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-family:'Inter',sans-serif;color:var(--navy);outline:none;transition:border .15s;background:var(--white);}
+.tbl-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(40,120,200,.12);}
 
 .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;}
 .pill-met{background:var(--green-bg);color:var(--green);}
