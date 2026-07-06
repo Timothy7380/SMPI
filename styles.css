@@ -146,6 +146,11 @@ canvas { display:block; }
 .sp-table tr:last-child td{border-bottom:none;}
 .sp-table tr:hover td{background:#f8faff;}
 .sp-table td:first-child{font-weight:500;}
+/* "Details" columns (raw per-platform metrics) can be a long string — cap
+   the width and truncate with an ellipsis instead of letting it stretch the
+   table indefinitely or spill past the card. Hover shows the full text via
+   the cell's title attribute. */
+.sp-table td.details-cell{max-width:220px;overflow:hidden;text-overflow:ellipsis;cursor:default;}
 
 .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;}
 .pill-met{background:var(--green-bg);color:var(--green);}
