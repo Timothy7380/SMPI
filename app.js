@@ -638,7 +638,11 @@ const W=['Wk1','Wk2','Wk3','Wk4','Wk5','Wk6','Wk7','Wk8'];
 const tt={backgroundColor:'#0f172a',titleColor:'#fff',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.07)',borderWidth:1,padding:10,cornerRadius:10};
 const gr={color:'rgba(0,0,0,0.04)'};
 const ch={color:'#64748b',font:{size:11,family:'Inter'}};
-function bOpt(extra={}){return{responsive:true,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:tt,...(extra.plugins||{})},scales:{x:{grid:gr,ticks:ch},y:{grid:gr,ticks:ch,beginAtZero:true}},...extra};}
+// aspectRatio:2.2 gives a sensible wide/short shape by default (Chart.js
+// otherwise infers ratio from the canvas's initial width/height HTML
+// attributes, which — for these wide dashboard cards — made charts render
+// far taller than intended). Any explicit aspectRatio in `extra` still wins.
+function bOpt(extra={}){return{responsive:true,aspectRatio:2.2,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:tt,...(extra.plugins||{})},scales:{x:{grid:gr,ticks:ch},y:{grid:gr,ticks:ch,beginAtZero:true}},...extra};}
 
 // All real, all fetched from Supabase after login (see refreshAllData).
 // Empty until then — the login screen covers the UI so there's nothing to
@@ -1014,6 +1018,12 @@ function renderTrendChart(canvasId, storeKey, weekLabels, series) {
     data: { labels: weekLabels, datasets },
     options: {
       responsive: true,
+      // Without an explicit aspectRatio, Chart.js infers one from the
+      // canvas's initial (unset) width/height attributes — for these wide
+      // multi-week comparison cards that produced a chart 2-3x taller than
+      // it needed to be, and made the tight week-by-week bar grouping much
+      // harder to read at a glance. A fixed wide/short ratio fixes both.
+      aspectRatio: 2.3,
       plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 11, family: 'Inter' }, boxWidth: 10, padding: 12 } }, tooltip: tt },
       scales: { x: { grid: { display: false }, ticks: ch }, y: { grid: gr, ticks: ch, beginAtZero: true } }
     }
