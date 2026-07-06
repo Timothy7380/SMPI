@@ -146,11 +146,12 @@ canvas { display:block; }
 .sp-table tr:last-child td{border-bottom:none;}
 .sp-table tr:hover td{background:#f8faff;}
 .sp-table td:first-child{font-weight:500;}
-/* "Details" columns (raw per-platform metrics) can be a long string — cap
-   the width and truncate with an ellipsis instead of letting it stretch the
-   table indefinitely or spill past the card. Hover shows the full text via
-   the cell's title attribute. */
-.sp-table td.details-cell{max-width:220px;overflow:hidden;text-overflow:ellipsis;cursor:default;}
+/* Any column that can hold a long free-text or generated string (raw metrics
+   "Details", SEO post titles/keywords, etc.) gets a per-use max-width via
+   inline style + this class, so it truncates with an ellipsis instead of
+   stretching the table indefinitely or spilling past the card. Hover shows
+   the full text via the cell's title attribute. */
+.sp-table td.truncate-cell{overflow:hidden;text-overflow:ellipsis;cursor:default;}
 
 .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;}
 .pill-met{background:var(--green-bg);color:var(--green);}
@@ -206,7 +207,7 @@ canvas { display:block; }
 .page{display:none;}.page.active{display:block;}
 
 /* TOAST */
-.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--navy);color:#fff;padding:12px 22px;border-radius:99px;font-size:13px;font-weight:500;z-index:9999;transition:transform .3s ease;box-shadow:0 4px 20px rgba(15,23,42,.25);pointer-events:none;white-space:nowrap;}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--navy);color:#fff;padding:12px 22px;border-radius:18px;font-size:13px;font-weight:500;z-index:9999;transition:transform .3s ease;box-shadow:0 4px 20px rgba(15,23,42,.25);pointer-events:none;max-width:calc(100vw - 32px);width:max-content;text-align:center;white-space:normal;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 
 /* MINI BARS */
