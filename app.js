@@ -1085,11 +1085,10 @@ function upsertHBarChart(canvasId, storeKey, labels, data, chartLabel) {
 }
 
 function renderPlatformTotalsCharts() {
-  const weeklyFollowers = [], totalFollowers = [], impressions = [], leads = [];
+  const weeklyFollowers = [], totalFollowers = [], impressions = [];
   PLATFORM_TOTALS_ORDER.forEach(p => {
     const row = latestRowForPlatform(p);
     weeklyFollowers.push(row ? row.followers : 0);
-    leads.push(row ? row.leads : 0);
     const raw = row ? row.rawMetrics || {} : {};
     totalFollowers.push(raw[TOTAL_FOLLOWERS_LABEL[p]] || 0);
     impressions.push(raw[IMPRESSIONS_LABEL[p]] || 0);
@@ -1097,7 +1096,14 @@ function renderPlatformTotalsCharts() {
   upsertHBarChart('platWeeklyFollowersChart', 'platWeeklyFollowersChartObj', PLATFORM_TOTALS_ORDER, weeklyFollowers, 'Weekly Followers');
   upsertHBarChart('platTotalFollowersChart', 'platTotalFollowersChartObj', PLATFORM_TOTALS_ORDER, totalFollowers, 'Total Followers');
   upsertHBarChart('platImpressionsChart', 'platImpressionsChartObj', PLATFORM_TOTALS_ORDER, impressions, 'Impressions');
-  upsertHBarChart('platLeadsChart', 'platLeadsChartObj', PLATFORM_TOTALS_ORDER, leads, 'Leads');
+
+  // Leads breakdown also includes Google Search as a lead source. It isn't a
+  // social platform (no followers/impressions/engagement of its own), so it
+  // intentionally only shows up here — not in the 3 charts above, not in any
+  // other KPI page or report.
+  const LEADS_PLATFORMS = [...PLATFORM_TOTALS_ORDER, 'Google Search'];
+  const leads = LEADS_PLATFORMS.map(p => { const row = latestRowForPlatform(p); return row ? row.leads : 0; });
+  upsertHBarChart('platLeadsChart', 'platLeadsChartObj', LEADS_PLATFORMS, leads, 'Leads');
 }
 
 // ═══ TREND ANALYSIS (Reports page) ═══
