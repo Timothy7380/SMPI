@@ -732,16 +732,13 @@ window.onload=()=>{
     {label:'Score',data:[],borderColor:'#2878C8',backgroundColor:'rgba(40,120,200,0.07)',fill:true,tension:0.4,pointRadius:3,borderWidth:2.5},
     {label:'Target',data:[],borderColor:'#d97706',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false}
   ]},options:{...bOpt(),plugins:{legend:{display:true,labels:{color:'#64748b',font:{size:11,family:'Inter'},boxWidth:10,padding:14}},tooltip:tt}}});
-  // Brand radar (AI Review page) — illustrative AI-narrative example, not
-  // backed by real per-component sub-scores (this app only collects one
-  // overall Branding score), left as-is intentionally.
-  new Chart(document.getElementById('brandChart'),{type:'radar',data:{labels:['Visual','Tone','Quality','Relevance','Prestige','CTA'],datasets:[{label:'Brand Score',data:[94,88,91,85,93,80],borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,0.12)',borderWidth:2,pointBackgroundColor:'#7c3aed'}]},options:{responsive:true,scales:{r:{grid:{color:'rgba(0,0,0,0.06)'},pointLabels:{color:'#64748b',font:{size:11}},ticks:{display:false},suggestedMin:50,suggestedMax:100}},plugins:{legend:{display:false},tooltip:tt}}});
-  // engChart, engDonut, leadsChart, audChart, commChart, flwChart and
-  // brandScoreTrendChart are all created on first use by
-  // renderEngagementKPIPage/renderLeadsKPIPage/renderFollowersKPIPage/
-  // renderAudienceKPIPage/renderCommsKPIPage/renderBrandingKPIPage (via
-  // renderTrendChart/renderQualTrendChart/renderEngagementDonut), which run
-  // right after this once real data has loaded — see renderAllKPIPages().
+  // engChart, engDonut, leadsChart, audChart, commChart, flwChart,
+  // brandScoreTrendChart and aiBrandTrendChart are all created on first use
+  // by renderEngagementKPIPage/renderLeadsKPIPage/renderFollowersKPIPage/
+  // renderAudienceKPIPage/renderCommsKPIPage/renderBrandingKPIPage/
+  // renderAIReview (via renderTrendChart/renderQualTrendChart/
+  // renderEngagementDonut), which run right after this once real data has
+  // loaded — see renderAllKPIPages().
   // Leaderboard chart
   window.lbChartObj=new Chart(document.getElementById('lbChart'),{type:'bar',data:{labels:['GeoInfotech','Geoinfo Academy','Geostore'],datasets:[{label:'Score',data:[0,0,0],backgroundColor:['#fbbf24','#94a3b8','#d97706'],borderRadius:8}]},options:{...bOpt(),indexAxis:'y',plugins:{legend:{display:false},tooltip:tt},scales:{x:{grid:gr,ticks:{...ch},max:100},y:{grid:{display:false},ticks:ch}}}});
 
@@ -843,6 +840,53 @@ function setAiBar(label, value){
   });
 }
 
+// Generates real, data-driven weekly insight boxes — no fabricated text or
+// numbers. Reads directly off the current Overall row for the brand, so the
+// wording and every number in it changes exactly when the underlying real
+// data changes. Used by both the Dashboard's "AI Weekly Review" card and
+// the AI Review page's "AI Recommendations" card (same real signals,
+// surfaced in two places for convenience).
+function generateRealInsights(row){
+  if (!row){
+    return [{ title:'No data logged yet', body:'Log this week\'s platform numbers to see real insights here.', bg:'var(--bg)', border:'var(--sub2)', titleColor:'var(--sub2)' }];
+  }
+  const insights=[];
+
+  if (row.brandingScore!=null){
+    const s=row.brandingScore;
+    if (s>=90) insights.push({ title:'Branding is excellent', body:`AI Branding Score of ${s} indicates strong content consistency this week.`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+    else if (s>=75) insights.push({ title:'Branding is solid', body:`AI Branding Score of ${s} is above the 75+ target — keep the current content style going.`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+    else insights.push({ title:'Branding needs attention', body:`AI Branding Score of ${s} is below the 75+ target this week.`, bg:'var(--amber-bg)', border:'var(--amber)', titleColor:'var(--amber)' });
+  } else {
+    insights.push({ title:'Branding not scored yet', body:'Write this week\'s branding notes on the AI Review page and click "Score With AI" to get a real score.', bg:'var(--bg)', border:'var(--sub2)', titleColor:'var(--sub2)' });
+  }
+
+  const leadsPct=Math.round((row.leads||0)/KPI_TARGETS.leads*100);
+  if ((row.leads||0)>=KPI_TARGETS.leads) insights.push({ title:'Lead generation on target', body:`${row.leads} leads this week vs a target of ${KPI_TARGETS.leads} (${leadsPct}%). Keep the current CTA strategy going.`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+  else insights.push({ title:'Lead generation needs attention', body:`${row.leads||0} leads vs a target of ${KPI_TARGETS.leads} (${leadsPct}% of target). Consider a stronger CTA in next week's posts.`, bg:'var(--amber-bg)', border:'var(--amber)', titleColor:'var(--amber)' });
+
+  const flwPct=Math.round((row.followers||0)/KPI_TARGETS.followers*100);
+  if ((row.followers||0)>=KPI_TARGETS.followers) insights.push({ title:'Follower growth on target', body:`${row.followers} new followers this week vs a target of ${KPI_TARGETS.followers} (${flwPct}%).`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+  else insights.push({ title:'Follower growth below target', body:`${row.followers||0} new followers vs a target of ${KPI_TARGETS.followers} (${flwPct}% of target). Consider collaborations or giveaway posts to accelerate growth.`, bg:'var(--red-bg)', border:'var(--red)', titleColor:'var(--red)' });
+
+  if (row.commScore!=null){
+    const c=row.commScore;
+    if (c>=75) insights.push({ title:'Communication score up', body:`Response time and comment engagement scored ${c}/100 this week. Keep this rhythm going.`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+    else insights.push({ title:'Communication needs work', body:`Communication scored ${c}/100 this week, below the 75+ target.`, bg:'var(--amber-bg)', border:'var(--amber)', titleColor:'var(--amber)' });
+  } else {
+    insights.push({ title:'Communication not scored yet', body:'Write this week\'s communication notes on the AI Review page and click "Score With AI" to get a real score.', bg:'var(--bg)', border:'var(--sub2)', titleColor:'var(--sub2)' });
+  }
+
+  return insights;
+}
+
+function renderInsightsInto(containerId, row){
+  const container=document.getElementById(containerId);
+  if (!container) return;
+  const insights=generateRealInsights(row);
+  container.innerHTML=insights.map(it=>`<div class="ai-box" style="background:${it.bg};border-left-color:${it.border}"><div class="ai-box-title" style="color:${it.titleColor}">${it.title}</div><div class="ai-box-body">${it.body}</div></div>`).join('');
+}
+
 // Pushes the real Overall row for the currently-viewed brand into the
 // Dashboard: the big score donut, the "Overall Performance Score" breakdown,
 // and all 7 KPI stat cards.
@@ -850,19 +894,25 @@ function renderDashboardKPIs(){
   const row=getDashboardRow();
   const donutNum=document.getElementById('donutScoreNum');
   const overallNum=document.getElementById('overallScore');
+  // Document order: the 4 g4 cards (Engagement/Leads/Follower Growth/SEO)
+  // come first, then the 3 g3 cards (AI Branding/Target Audience/Comm) —
+  // querySelectorAll always returns matches in tree order, so cards[0..6]
+  // line up with that same order regardless of how the selector is written.
+  const cards=document.querySelectorAll('#page-dashboard .stat-card');
 
   if (!row){
     if (donutNum) donutNum.textContent='—';
     if (overallNum) overallNum.textContent='—';
-    setStatCard('#page-dashboard','Engagement','—');
-    setStatCard('#page-dashboard','Leads Generated','—');
-    setStatCard('#page-dashboard','Follower Growth','—');
-    setStatCard('#page-dashboard','SEO Performance','—');
-    setStatCard('#page-dashboard','AI Branding Score','—/100');
-    setStatCard('#page-dashboard','Target Audience Quality','—/100');
-    setStatCard('#page-dashboard','Communication Score','—/100');
-    ['Engagement (20%)','Leads (25%)','Followers (10%)','SEO (10%)','AI Branding (15%)','Audience (10%)','Communication (10%)'].forEach(l=>setAiBar(l,null));
     if (window.scoreDonutObj){ window.scoreDonutObj.data.datasets[0].data=[0,100]; window.scoreDonutObj.update(); }
+    fillStatCard(cards[0], { label:'Engagement', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+KPI_TARGETS.engagement.toLocaleString(), prog:0 });
+    fillStatCard(cards[1], { label:'Leads Generated', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+KPI_TARGETS.leads, prog:0 });
+    fillStatCard(cards[2], { label:'Follower Growth', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+KPI_TARGETS.followers, prog:0 });
+    fillStatCard(cards[3], { label:'SEO Performance', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: 50%', prog:0 });
+    fillStatCard(cards[4], { label:'AI Branding Score', value:'—/100', delta:'Not scored yet', deltaColor:'var(--sub2)', thr:'Target: 75+', prog:0 });
+    fillStatCard(cards[5], { label:'Target Audience Quality', value:'—/100', delta:'Not scored yet', deltaColor:'var(--sub2)', thr:'Target: 70+', prog:0 });
+    fillStatCard(cards[6], { label:'Communication Score', value:'—/100', delta:'Not scored yet', deltaColor:'var(--sub2)', thr:'Target: 75+', prog:0 });
+    ['Engagement (20%)','Leads (25%)','Followers (10%)','SEO (10%)','AI Branding (15%)','Audience (10%)','Communication (10%)'].forEach(l=>setAiBar(l,null));
+    renderInsightsInto('dashAiInsights', null);
     return;
   }
 
@@ -870,13 +920,30 @@ function renderDashboardKPIs(){
   if (overallNum) overallNum.textContent=row.score;
   if (window.scoreDonutObj){ window.scoreDonutObj.data.datasets[0].data=[row.score,100-row.score]; window.scoreDonutObj.update(); }
 
-  setStatCard('#page-dashboard','Engagement',row.engagementTotal.toLocaleString());
-  setStatCard('#page-dashboard','Leads Generated',row.leads);
-  setStatCard('#page-dashboard','Follower Growth',row.followers);
-  setStatCard('#page-dashboard','SEO Performance',row.seoScore!=null?row.seoScore+'%':'—');
-  setStatCard('#page-dashboard','AI Branding Score',(row.brandingScore!=null?row.brandingScore:'—')+'/100');
-  setStatCard('#page-dashboard','Target Audience Quality',(row.audienceScore!=null?row.audienceScore:'—')+'/100');
-  setStatCard('#page-dashboard','Communication Score',(row.commScore!=null?row.commScore:'—')+'/100');
+  const engPct=Math.round(row.engagementTotal/KPI_TARGETS.engagement*100);
+  const engColor=engPct>=100?'var(--green)':engPct>=70?'var(--amber)':'var(--red)';
+  fillStatCard(cards[0], { label:'Engagement', value:row.engagementTotal.toLocaleString(), delta:(engPct>=100?'✓ ':'')+engPct+'% of target', deltaColor:engColor, thr:'Target: '+KPI_TARGETS.engagement.toLocaleString(), prog:engPct, progColor:engColor });
+
+  const leadsPct=Math.round((row.leads||0)/KPI_TARGETS.leads*100);
+  const leadsColor=leadsPct>=100?'var(--green)':leadsPct>=70?'var(--amber)':'var(--red)';
+  fillStatCard(cards[1], { label:'Leads Generated', value:row.leads, delta:(leadsPct>=100?'✓ ':'⚠ ')+leadsPct+'% of target', deltaColor:leadsColor, thr:'Target: '+KPI_TARGETS.leads, prog:leadsPct, progColor:leadsColor });
+
+  const flwPct=Math.round((row.followers||0)/KPI_TARGETS.followers*100);
+  const flwColor=flwPct>=100?'var(--green)':flwPct>=70?'var(--amber)':'var(--red)';
+  fillStatCard(cards[2], { label:'Follower Growth', value:row.followers, delta:(flwPct>=100?'✓ ':'⚠ ')+flwPct+'% of target', deltaColor:flwColor, thr:'Target: '+KPI_TARGETS.followers, prog:flwPct, progColor:flwColor });
+
+  const seoVal=row.seoScore;
+  const seoColor=seoVal==null?'var(--sub2)':seoVal>=50?'var(--green)':'var(--red)';
+  fillStatCard(cards[3], { label:'SEO Performance', value:seoVal!=null?seoVal+'%':'—', delta:seoVal==null?'No posts logged yet':(seoVal>=50?'✓ On target':'Below 50% target'), deltaColor:seoColor, thr:'Target: 50%', prog:seoVal||0, progColor:seoColor });
+
+  const brandColor=row.brandingScore==null?'var(--sub2)':row.brandingScore>=75?'var(--purple)':row.brandingScore>=50?'var(--amber)':'var(--red)';
+  fillStatCard(cards[4], { label:'AI Branding Score', value:(row.brandingScore!=null?row.brandingScore:'—')+'/100', delta:row.brandingScore==null?'Not scored yet':(row.brandingScore>=75?'✓ Above target':'Below target'), deltaColor:brandColor, thr:'Target: 75+', prog:row.brandingScore||0, progColor:brandColor });
+
+  const audColor=row.audienceScore==null?'var(--sub2)':row.audienceScore>=70?'var(--teal)':'var(--amber)';
+  fillStatCard(cards[5], { label:'Target Audience Quality', value:(row.audienceScore!=null?row.audienceScore:'—')+'/100', delta:row.audienceScore==null?'Not scored yet':(row.audienceScore>=70?'✓ Above target':'Below target'), deltaColor:audColor, thr:'Target: 70+', prog:row.audienceScore||0, progColor:audColor });
+
+  const commColor=row.commScore==null?'var(--sub2)':row.commScore>=75?'var(--green)':'var(--amber)';
+  fillStatCard(cards[6], { label:'Communication Score', value:(row.commScore!=null?row.commScore:'—')+'/100', delta:row.commScore==null?'Not scored yet':(row.commScore>=75?'✓ Above target':'Below target'), deltaColor:commColor, thr:'Target: 75+', prog:row.commScore||0, progColor:commColor });
 
   setAiBar('Engagement (20%)',row.engScore);
   setAiBar('Leads (25%)',row.leadsScore);
@@ -885,16 +952,22 @@ function renderDashboardKPIs(){
   setAiBar('AI Branding (15%)',row.brandingScore);
   setAiBar('Audience (10%)',row.audienceScore);
   setAiBar('Communication (10%)',row.commScore);
+
+  renderInsightsInto('dashAiInsights', row);
 }
 
 // AI Review page's big Grade letter + points line (score breakdown bars are
 // already covered by setAiBar in renderDashboardKPIs since it's the same
 // underlying row)
 function renderAIReview(){
+  const brand=currentDashboardBrand();
   const row=getDashboardRow();
   const gradeEl=document.getElementById('aiGradeLetter');
   const ptsEl=document.getElementById('aiPointsText');
   renderQualitativeNotesSection();
+  renderInsightsInto('aiRecommendationsBox', row);
+  const brandSeries = buildQualSeries(brand, 'brandingScore');
+  renderQualTrendChart('aiBrandTrendChart', 'aiBrandTrendChartObj', brandSeries, 'Branding Score', 'rgba(124,58,237,0.12)', '#7c3aed', 75, 'line');
   if (!row){
     if (gradeEl) gradeEl.textContent='—';
     if (ptsEl) ptsEl.textContent='No data logged yet';
