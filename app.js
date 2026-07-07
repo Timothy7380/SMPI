@@ -207,16 +207,6 @@ const PLATFORM_FIELDS = {
     { key: 'impressions', label: 'Impressions' },
     { key: 'subscribers', label: 'Subscribers' },
     { key: 'newSubs', label: 'New Subs' }
-  ],
-  // Google (Business Profile / Search presence) has no "followers" concept
-  // like the social platforms above, so its fields focus on reach + the
-  // actions that actually drive leads (clicks, direction requests, calls).
-  'Google': [
-    { key: 'views', label: 'Profile Views' },
-    { key: 'searches', label: 'Searches' },
-    { key: 'websiteClicks', label: 'Website Clicks' },
-    { key: 'directionRequests', label: 'Direction Requests' },
-    { key: 'calls', label: 'Phone Calls' }
   ]
 };
 
@@ -245,8 +235,6 @@ function getEngagementAndFollowers(platform, v) {
       return { engagement: v.interactions || 0, followerGrowth: v.newFollowers || 0 };
     case 'YouTube':
       return { engagement: v.likes || 0, followerGrowth: v.newSubs || 0 };
-    case 'Google':
-      return { engagement: (v.websiteClicks || 0) + (v.directionRequests || 0) + (v.calls || 0), followerGrowth: 0 };
     default:
       return { engagement: 0, followerGrowth: 0 };
   }
@@ -258,11 +246,8 @@ function getEngagementAndFollowers(platform, v) {
 // "Total Followers"; Facebook/Instagram/TikTok report "Views" instead of
 // "Impressions"), so this maps each platform to whichever label it actually
 // has, letting the Platform Totals charts show all 6 platforms consistently.
-// Google has no "Total Followers"-equivalent, so it's intentionally left out
-// of this map (raw[undefined] safely falls back to 0 wherever this is read),
-// meaning it correctly shows 0 in Follower-based charts instead of fake data.
 const TOTAL_FOLLOWERS_LABEL = { 'Facebook': 'Total Followers', 'LinkedIn': 'Total Followers', 'Twitter': 'Total Followers', 'TikTok': 'Followers', 'Instagram': 'Followers', 'YouTube': 'Subscribers' };
-const IMPRESSIONS_LABEL = { 'Facebook': 'Views', 'LinkedIn': 'Impressions', 'Twitter': 'Impressions', 'TikTok': 'Views', 'Instagram': 'Views', 'YouTube': 'Impressions', 'Google': 'Profile Views' };
+const IMPRESSIONS_LABEL = { 'Facebook': 'Views', 'LinkedIn': 'Impressions', 'Twitter': 'Impressions', 'TikTok': 'Views', 'Instagram': 'Views', 'YouTube': 'Impressions' };
 
 // One distinct color per platform, reused across every Platform Totals /
 // Trend Analysis chart and insight card so the whole report stays visually
@@ -275,8 +260,7 @@ const PLATFORM_COLORS = {
   'Twitter':   { hex: '#7c3aed', bgVar: 'var(--purple-bg)',   textVar: 'var(--purple)' },
   'TikTok':    { hex: '#db2777', bgVar: 'var(--pink-bg)',     textVar: 'var(--pink)' },
   'Instagram': { hex: '#d97706', bgVar: 'var(--amber-bg)',    textVar: 'var(--amber)' },
-  'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' },
-  'Google':    { hex: '#4285F4', bgVar: 'var(--indigo-bg)',   textVar: 'var(--indigo)' }
+  'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' }
 };
 
 // Formats a stored raw_metrics object (keyed by human-readable label, e.g.
@@ -1021,10 +1005,7 @@ function renderPlatformTracker(){
   const container = document.getElementById('platformTracker');
   if (!container) return;
 
-  // Reuses the single shared platform list (PLATFORM_TOTALS_ORDER) instead of
-  // its own hardcoded copy, so adding/removing a platform only ever needs to
-  // happen in one place.
-  const ALL_PLATFORMS = PLATFORM_TOTALS_ORDER;
+  const ALL_PLATFORMS = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
   const groups = {};
   logData.forEach(r => {
     const key = r.brand + '||' + r.wk;
@@ -1073,7 +1054,7 @@ function renderPlatformTracker(){
 // broken down across the 6 platforms. Uses each platform's most recently
 // logged row (across all brands) so "Total Followers" reflects a current
 // snapshot rather than double-counting past weeks.
-const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube','Google'];
+const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
 const PLATFORM_TOTALS_COLOR = '#0d9488';
 
 function latestRowForPlatform(platform) {
@@ -1288,10 +1269,6 @@ async function saveTargetActual(platform) {
 
 // The live "This Week" editor table — one row per platform, target is
 // static, actual is typed in and saved individually per platform.
-// Deliberately iterates Object.keys(PLATFORM_WEEKLY_TARGETS) rather than the
-// full PLATFORM_TOTALS_ORDER list — this feature only applies to platforms
-// that actually have a static weekly target defined (e.g. Google doesn't,
-// so it's automatically excluded here without any special-casing).
 function renderPlatformTargetsCurrentTable() {
   const container = document.getElementById('platformTargetsCurrent');
   if (!container) return;
@@ -1303,7 +1280,7 @@ function renderPlatformTargetsCurrentTable() {
 
   const brand = currentDashboardBrand();
   const weekLabel = getWeekLabel();
-  const rows = Object.keys(PLATFORM_WEEKLY_TARGETS).map(p => {
+  const rows = PLATFORM_TOTALS_ORDER.map(p => {
     const target = PLATFORM_WEEKLY_TARGETS[p];
     const row = platformActualsData.find(r => r.brand === brand && r.wk === weekLabel && r.plat === p);
     const actual = row ? row.actual : null;
@@ -1345,10 +1322,7 @@ function buildTargetAchievementSeries(maxWeeks = 4) {
   if (weekKeys.length > maxWeeks) weekKeys = weekKeys.slice(weekKeys.length - maxWeeks);
 
   const series = {};
-  // Same reasoning as renderPlatformTargetsCurrentTable — only platforms with
-  // a static target belong in this feature, so Google (no target) never
-  // enters the series and can't produce a NaN/undefined-target bar.
-  Object.keys(PLATFORM_WEEKLY_TARGETS).forEach(p => { series[p] = weekKeys.map(() => null); });
+  PLATFORM_TOTALS_ORDER.forEach(p => { series[p] = weekKeys.map(() => null); });
   rowsWithBucket.forEach(rb => {
     const wi = weekKeys.indexOf(rb.key);
     if (wi === -1 || !series[rb.row.plat]) return;
@@ -1365,7 +1339,7 @@ function buildTargetAchievementSeries(maxWeeks = 4) {
 function renderTargetAchievementChart(canvasId, storeKey, weekLabels, series) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const platforms = Object.keys(series).filter(p => series[p].some(v => v != null));
+  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
   const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 }));
   const targetLine = { label: '100% Target', type: 'line', data: weekLabels.map(() => 100), borderColor: '#d97706', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false };
   const allDatasets = [...datasets, targetLine];
@@ -1397,7 +1371,7 @@ function renderTargetInsights(containerId, weekLabels, series) {
   if (!container) return;
   const n = weekLabels.length;
   const items = [];
-  Object.keys(series).forEach(p => {
+  PLATFORM_TOTALS_ORDER.forEach(p => {
     const latest = series[p][n - 1];
     if (latest == null) return;
     items.push({ platform: p, pct: latest });
@@ -1422,7 +1396,7 @@ function renderTargetInsights(containerId, weekLabels, series) {
 function renderTargetDetailTable(tableId, weekLabels, series) {
   const table = document.getElementById(tableId);
   if (!table) return;
-  const platforms = Object.keys(series).filter(p => series[p].some(v => v != null));
+  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
   if (!platforms.length) {
     table.innerHTML = `<tbody><tr><td style="padding:14px;color:var(--sub2);font-size:13px">No actuals logged yet.</td></tr></tbody>`;
     return;
@@ -1494,19 +1468,18 @@ function renderEngagementKPIPage() {
     fillStatCard(cards[0], { label: 'Total Engagement', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: 0 });
     fillStatCard(cards[1], { label: 'Engagement Score', value: '—', delta: '', thr: '', prog: 0 });
     fillStatCard(cards[2], { label: 'Top Platform', value: '—', delta: '', thr: '', prog: 0 });
-    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / ' + PLATFORM_TOTALS_ORDER.length, delta: '', thr: '', prog: 0 });
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / 6', delta: '', thr: '', prog: 0 });
   } else {
     const weekRows = rowsForBrandWeek(brand, row.wk);
     const top = topPlatformsBy(weekRows, r => r.engagementTotal, 1)[0];
     const loggedCount = new Set(weekRows.map(r => r.plat).filter(p => PLATFORM_TOTALS_ORDER.includes(p))).size;
-    const totalPlatforms = PLATFORM_TOTALS_ORDER.length;
     const pct = Math.round(row.engagementTotal / KPI_TARGETS.engagement * 100);
     const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
 
     fillStatCard(cards[0], { label: 'Total Engagement', value: row.engagementTotal.toLocaleString(), delta: (pct >= 100 ? '✓ ' : '') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: pct, progColor: pctColor });
     fillStatCard(cards[1], { label: 'Engagement Score', value: row.engScore + '/100', delta: 'Grade: ' + row.grade, deltaColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)', thr: row.engScore >= 80 ? '✓ Above 80 threshold' : 'Below 80 threshold', thrColor: row.engScore >= 80 ? 'var(--green)' : 'var(--red)', prog: row.engScore, progColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)' });
     fillStatCard(cards[2], { label: 'Top Platform', value: top ? top.plat : '—', delta: top ? top.val.toLocaleString() + ' engagement' : 'No platforms logged', deltaColor: 'var(--sub)', thr: row.wk, prog: top ? 100 : 0, progColor: top ? PLATFORM_COLORS[top.plat].hex : 'var(--sub2)', iconBg: top ? PLATFORM_COLORS[top.plat].bgVar : '', iconColor: top ? PLATFORM_COLORS[top.plat].textVar : '' });
-    fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / ' + totalPlatforms, delta: loggedCount >= totalPlatforms ? '✓ All platforms logged' : (totalPlatforms - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= totalPlatforms ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / totalPlatforms * 100), progColor: loggedCount >= totalPlatforms ? 'var(--green)' : 'var(--amber)' });
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / 6', delta: loggedCount >= 6 ? '✓ All platforms logged' : (6 - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / 6 * 100), progColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)' });
   }
 
   const series = buildWeeklyPlatformSeries(r => r.engagementTotal || 0, 4, brandRows);
