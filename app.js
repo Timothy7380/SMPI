@@ -260,7 +260,8 @@ const PLATFORM_COLORS = {
   'Twitter':   { hex: '#7c3aed', bgVar: 'var(--purple-bg)',   textVar: 'var(--purple)' },
   'TikTok':    { hex: '#db2777', bgVar: 'var(--pink-bg)',     textVar: 'var(--pink)' },
   'Instagram': { hex: '#d97706', bgVar: 'var(--amber-bg)',    textVar: 'var(--amber)' },
-  'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' }
+  'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' },
+  'Google Search': { hex: '#4285F4', bgVar: 'var(--indigo-bg)', textVar: 'var(--indigo)' }
 };
 
 // Formats a stored raw_metrics object (keyed by human-readable label, e.g.
@@ -1057,6 +1058,15 @@ function renderPlatformTracker(){
 const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
 const PLATFORM_TOTALS_COLOR = '#0d9488';
 
+// Google Search isn't a social platform (no followers/impressions/engagement
+// of its own), so it deliberately stays OUT of PLATFORM_TOTALS_ORDER — but it
+// is a real lead source, so anywhere leads specifically are broken down by
+// platform (the Reports page's Week Leads by Platform chart, and the Leads
+// KPI page's top-platform cards + trend chart) uses this extended list
+// instead, so Google Search leads show up everywhere leads are, without
+// bleeding into Followers/Impressions/Engagement/Platform Weekly Targets.
+const LEADS_PLATFORMS = [...PLATFORM_TOTALS_ORDER, 'Google Search'];
+
 function latestRowForPlatform(platform) {
   return logData
     .filter(r => r.plat === platform)
@@ -1097,11 +1107,9 @@ function renderPlatformTotalsCharts() {
   upsertHBarChart('platTotalFollowersChart', 'platTotalFollowersChartObj', PLATFORM_TOTALS_ORDER, totalFollowers, 'Total Followers');
   upsertHBarChart('platImpressionsChart', 'platImpressionsChartObj', PLATFORM_TOTALS_ORDER, impressions, 'Impressions');
 
-  // Leads breakdown also includes Google Search as a lead source. It isn't a
-  // social platform (no followers/impressions/engagement of its own), so it
-  // intentionally only shows up here — not in the 3 charts above, not in any
-  // other KPI page or report.
-  const LEADS_PLATFORMS = [...PLATFORM_TOTALS_ORDER, 'Google Search'];
+  // Leads breakdown also includes Google Search (see LEADS_PLATFORMS above) —
+  // it intentionally only shows up here and on the Leads KPI page, not in the
+  // 3 charts above or anywhere else platforms are broken down.
   const leads = LEADS_PLATFORMS.map(p => { const row = latestRowForPlatform(p); return row ? row.leads : 0; });
   upsertHBarChart('platLeadsChart', 'platLeadsChartObj', LEADS_PLATFORMS, leads, 'Leads');
 }
@@ -1123,7 +1131,7 @@ function renderPlatformTotalsCharts() {
 // them, then sums valueFn(row) per platform per week. Rows for the same
 // platform+week from different brands are summed (this is a company-wide
 // view across all brands, not a single-brand snapshot).
-function buildWeeklyPlatformSeries(valueFn, maxWeeks = 4, rows = logData) {
+function buildWeeklyPlatformSeries(valueFn, maxWeeks = 4, rows = logData, platforms = PLATFORM_TOTALS_ORDER) {
   const rowsWithBucket = rows.map(r => {
     const bucketDate = weekBucketFromDate(r.weekEnding || r.weekStart || r.createdAt);
     return { row: r, key: weekBucketKey(bucketDate), label: weekBucketLabel(bucketDate), sortDate: bucketDate };
@@ -1135,7 +1143,7 @@ function buildWeeklyPlatformSeries(valueFn, maxWeeks = 4, rows = logData) {
   if (weekKeys.length > maxWeeks) weekKeys = weekKeys.slice(weekKeys.length - maxWeeks);
 
   const series = {};
-  PLATFORM_TOTALS_ORDER.forEach(p => { series[p] = weekKeys.map(() => 0); });
+  platforms.forEach(p => { series[p] = weekKeys.map(() => 0); });
   rowsWithBucket.forEach(rb => {
     const wi = weekKeys.indexOf(rb.key);
     if (wi === -1 || !series[rb.row.plat]) return;
@@ -1147,7 +1155,11 @@ function buildWeeklyPlatformSeries(valueFn, maxWeeks = 4, rows = logData) {
 function renderTrendChart(canvasId, storeKey, weekLabels, series) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v > 0));
+  // Reads whatever platform keys the passed-in series actually has (rather
+  // than always the full PLATFORM_TOTALS_ORDER list) so charts built from an
+  // extended platform list — e.g. the Leads KPI page's Leads Over Time chart,
+  // which also includes Google Search — render every series they were given.
+  const platforms = Object.keys(series).filter(p => series[p].some(v => v > 0));
   // barPercentage close to 1 + a lower categoryPercentage packs each week's
   // platform bars tightly together while leaving a clear visible gap before
   // the next week's cluster starts — matches the reference layout.
@@ -1438,10 +1450,10 @@ function rowsForBrandWeek(brand, wk) {
   return logData.filter(r => r.brand === brand && r.wk === wk);
 }
 
-function topPlatformsBy(rows, valueFn, n) {
+function topPlatformsBy(rows, valueFn, n, allowedPlatforms = PLATFORM_TOTALS_ORDER) {
   return rows
     .map(r => ({ plat: r.plat, val: valueFn(r) || 0 }))
-    .filter(x => PLATFORM_TOTALS_ORDER.includes(x.plat) && x.val > 0)
+    .filter(x => allowedPlatforms.includes(x.plat) && x.val > 0)
     .sort((a, b) => b.val - a.val)
     .slice(0, n);
 }
@@ -1527,7 +1539,11 @@ function renderLeadsKPIPage() {
     for (let i = 1; i < cards.length; i++) fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
   } else {
     const weekRows = rowsForBrandWeek(brand, row.wk);
-    const top3 = topPlatformsBy(weekRows, r => r.leads, 3);
+    // Leads is the one KPI where Google Search counts as a real platform (it
+    // already counts toward the Total Leads figure above via aggregateOverall
+    // regardless), so it's included here alongside the normal 6 — just not
+    // on the Followers/Engagement pages, where it has no data anyway.
+    const top3 = topPlatformsBy(weekRows, r => r.leads, 3, LEADS_PLATFORMS);
     const pct = Math.round(row.leads / KPI_TARGETS.leads * 100);
     const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
     fillStatCard(cards[0], { label: 'Total Leads', value: row.leads, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.leads + '/wk', prog: pct, progColor: pctColor });
@@ -1541,7 +1557,7 @@ function renderLeadsKPIPage() {
       }
     }
   }
-  const series = buildWeeklyPlatformSeries(r => r.leads || 0, 4, brandRows);
+  const series = buildWeeklyPlatformSeries(r => r.leads || 0, 4, brandRows, LEADS_PLATFORMS);
   renderTrendChart('leadsChart', 'leadsChartObj', series.weekLabels, series.series);
 }
 
