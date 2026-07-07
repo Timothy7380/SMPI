@@ -1891,11 +1891,20 @@ async function submitLog(){
 
   // Resubmitting the same platform for a week that's already logged updates
   // that row instead of creating a duplicate (matches the DB unique index on
-  // brand+week_label+platform). When editingLogId is set (opened via the
-  // Platform Log Tracker's Edit button), we already know exactly which row
-  // to update regardless of what its week label happens to be.
-  const existing = editingLogId
-    ? logData.find(r => r._id === editingLogId)
+  // brand+week_label+platform).
+  //
+  // When editingLogId is set (opened via the Platform Log Tracker's Edit
+  // button), we only reuse that exact row if the week hasn't changed — i.e.
+  // the manager is just correcting a number for the SAME week. If they also
+  // changed the Week Start/End to a different week while editing, that's a
+  // brand-new week's data and must NOT overwrite the original row (that would
+  // silently erase the previous week's real numbers). In that case we fall
+  // back to the normal brand+week+platform match — updating an existing row
+  // for that new week if one already exists, or inserting a fresh one — so
+  // the original edited row is left completely untouched.
+  const editingRow = editingLogId ? logData.find(r => r._id === editingLogId) : null;
+  const existing = (editingRow && editingRow.wk === weekLabel)
+    ? editingRow
     : logData.find(r => r.brand === selBrand && r.wk === weekLabel && r.plat === platform);
 
   const submitBtn = document.querySelector('#logModal .btn-blue');
