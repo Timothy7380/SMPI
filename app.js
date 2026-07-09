@@ -994,8 +994,90 @@ function renderLogTable(){
 }
 
 // Overall performance log — all 7 KPIs combined across platforms, per brand per week.
+// Every row carries a "View Report" button (openWeekReportByIndex) that opens
+// the full week-report modal for that exact overallData row — a Dashboard-
+// style snapshot locked to that past week instead of always the latest one.
 function renderReportsTable(){
-  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th></tr></thead><tbody>${overallData.map(r=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td></tr>`).join('')}</tbody>`;
+  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th><th></th></tr></thead><tbody>${overallData.map((r,i)=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td><button class="btn-outline" style="font-size:11px;padding:6px 12px;white-space:nowrap" onclick="openWeekReportByIndex(${i})">View Report</button></td></tr>`).join('')}</tbody>`;
+}
+
+// ═══ WEEK REPORT MODAL (Reports page) ═══
+// A Dashboard-style full snapshot for one specific past week instead of
+// always the latest one — lets managers/admin revisit and review any week
+// they've ever logged, not just the current one. Built entirely from the
+// same real data + same scoring/coloring conventions already used across the
+// Dashboard/KPI pages, just locked to whichever overallData row was clicked.
+
+function openWeekReportByIndex(i){
+  const row = overallData[i];
+  if (!row) { showToast('Could not find that week'); return; }
+  renderWeekReportModal(row);
+  openModal('weekReportModal');
+}
+
+function renderWeekReportModal(row){
+  const titleEl = document.getElementById('wrTitle');
+  const subEl = document.getElementById('wrSub');
+  const gradeEl = document.getElementById('wrGrade');
+  const scoreEl = document.getElementById('wrScore');
+  if (titleEl) titleEl.textContent = row.wk;
+  if (subEl) subEl.textContent = `${row.brand} · ${brandManagers[row.brand] || ''}`;
+  const scoreColor = row.score>=80?'var(--green)':row.score>=70?'var(--amber)':'var(--red)';
+  if (gradeEl) { gradeEl.textContent = row.grade; gradeEl.style.color = scoreColor; }
+  if (scoreEl) scoreEl.textContent = `${row.score} / 100 points`;
+
+  // Same target/threshold/color conventions as renderDashboardKPIs(), just
+  // reading off the clicked row instead of always getDashboardRow().
+  const engPct = Math.round(row.engagementTotal / KPI_TARGETS.engagement * 100);
+  const engColor = engPct>=100?'var(--green)':engPct>=70?'var(--amber)':'var(--red)';
+  const leadsPct = Math.round((row.leads||0) / KPI_TARGETS.leads * 100);
+  const leadsColor = leadsPct>=100?'var(--green)':leadsPct>=70?'var(--amber)':'var(--red)';
+  const flwPct = Math.round((row.followers||0) / KPI_TARGETS.followers * 100);
+  const flwColor = flwPct>=100?'var(--green)':flwPct>=70?'var(--amber)':'var(--red)';
+  const seoColor = row.seoScore==null?'var(--sub2)':row.seoScore>=50?'var(--green)':'var(--red)';
+  const brandColor = row.brandingScore==null?'var(--sub2)':row.brandingScore>=75?'var(--purple)':row.brandingScore>=50?'var(--amber)':'var(--red)';
+  const audColor = row.audienceScore==null?'var(--sub2)':row.audienceScore>=70?'var(--teal)':'var(--amber)';
+  const commColor = row.commScore==null?'var(--sub2)':row.commScore>=75?'var(--green)':'var(--amber)';
+
+  const kpis = [
+    { label:'Engagement', value: row.engagementTotal.toLocaleString(), delta:(engPct>=100?'✓ ':'')+engPct+'% of target', color:engColor, prog:engPct },
+    { label:'Leads Generated', value: row.leads, delta:(leadsPct>=100?'✓ ':'⚠ ')+leadsPct+'% of target', color:leadsColor, prog:leadsPct },
+    { label:'Follower Growth', value: row.followers, delta:(flwPct>=100?'✓ ':'⚠ ')+flwPct+'% of target', color:flwColor, prog:flwPct },
+    { label:'SEO Performance', value: row.seoScore!=null?row.seoScore+'%':'—', delta: row.seoScore==null?'No posts logged':(row.seoScore>=50?'✓ On target':'Below target'), color:seoColor, prog:row.seoScore||0 },
+    { label:'AI Branding Score', value:(row.brandingScore!=null?row.brandingScore:'—')+'/100', delta: row.brandingScore==null?'Not scored':(row.brandingScore>=75?'✓ Above target':'Below target'), color:brandColor, prog:row.brandingScore||0 },
+    { label:'Target Audience Quality', value:(row.audienceScore!=null?row.audienceScore:'—')+'/100', delta: row.audienceScore==null?'Not scored':(row.audienceScore>=70?'✓ Above target':'Below target'), color:audColor, prog:row.audienceScore||0 },
+    { label:'Communication Score', value:(row.commScore!=null?row.commScore:'—')+'/100', delta: row.commScore==null?'Not scored':(row.commScore>=75?'✓ Above target':'Below target'), color:commColor, prog:row.commScore||0 }
+  ];
+  const kpiCard = k => `<div class="stat-card" style="cursor:default"><div class="sc-top"><div><div class="sc-lbl">${k.label}</div><div class="sc-val">${k.value}</div></div></div><div class="sc-delta" style="color:${k.color}">${k.delta}</div><div class="prog"><div class="prog-f" style="width:${Math.max(0,Math.min(100,k.prog))}%;background:${k.color}"></div></div></div>`;
+  const row1El = document.getElementById('wrKpiCardsRow1');
+  const row2El = document.getElementById('wrKpiCardsRow2');
+  if (row1El) row1El.innerHTML = kpis.slice(0, 4).map(kpiCard).join('');
+  if (row2El) row2El.innerHTML = kpis.slice(4).map(kpiCard).join('');
+
+  const bars = [
+    { label:'Engagement (20%)', val: row.engScore },
+    { label:'Leads (25%)', val: row.leadsScore },
+    { label:'Followers (10%)', val: row.followersScore },
+    { label:'SEO (10%)', val: row.seoScore },
+    { label:'AI Branding (15%)', val: row.brandingScore },
+    { label:'Audience (10%)', val: row.audienceScore },
+    { label:'Communication (10%)', val: row.commScore }
+  ];
+  const barsEl = document.getElementById('wrScoreBars');
+  if (barsEl) barsEl.innerHTML = bars.map(b => `<div class="ai-score-bar"><div class="ai-bar-label">${b.label}</div><div class="ai-bar-track"><div class="ai-bar-fill" style="width:${b.val!=null?b.val:0}%;background:var(--blue)"></div></div><div class="ai-bar-val">${b.val!=null?b.val:'—'}</div></div>`).join('');
+
+  // Same per-platform rows the Platform Log Tracker shows for this week, with
+  // its own Edit button — closes this modal first so the Log Week edit modal
+  // never opens stacked on top of it.
+  const platRows = rowsForBrandWeek(row.brand, row.wk);
+  const platTableEl = document.getElementById('wrPlatformTable');
+  if (platTableEl) {
+    platTableEl.innerHTML = platRows.length
+      ? `<thead><tr><th>Platform</th><th>Engagement</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th><th>Details</th><th></th></tr></thead><tbody>${platRows.map(r=>`<tr><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:700">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td class="truncate-cell" style="color:var(--sub2);font-size:12px;max-width:180px" title="${escAttr(fmtRawMetrics(r.rawMetrics))}">${fmtRawMetrics(r.rawMetrics)}</td><td>${r._id?`<button class="btn-outline" style="font-size:11px;padding:5px 10px" onclick="closeModal('weekReportModal');openEditLog('${r._id}')">Edit</button>`:''}</td></tr>`).join('')}</tbody>`
+      : `<tbody><tr><td style="padding:14px;color:var(--sub2);font-size:13px">No platforms logged this week.</td></tr></tbody>`;
+  }
+
+  renderInsightsInto('wrInsights', row);
 }
 
 // Platform Log Tracker — groups the raw per-platform rows by the same
