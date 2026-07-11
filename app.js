@@ -1329,6 +1329,36 @@ function buildWeeklyPlatformSeries(valueFn, maxWeeks = 4, rows = logData, platfo
   return { weekLabels: weekKeys.map(k => weekMeta[k].label), series };
 }
 
+// Per-chart Bar/Line view preference, keyed by the chart's storeKey.
+// Undefined/'bar' is the default so every chart that never gets a toggle
+// switch wired to it (e.g. the single-platform-group KPI page charts that
+// happen to reuse renderTrendChart) is completely unaffected — this only
+// changes behavior for charts a toggle switch actually flips.
+let chartViewMode = {};
+
+// One dataset per platform, shaped for whichever view is currently active.
+// Line view swaps the grouped bars for a smooth per-platform line so a
+// multi-week trend direction reads at a glance; Bar view keeps the original
+// tightly-clustered comparison bars. Both share the same color per platform
+// so switching views doesn't reshuffle which color means which platform.
+function buildComparisonDataset(label, data, color, mode) {
+  if (mode === 'line') {
+    return { type: 'line', label, data, borderColor: color, backgroundColor: color, pointBackgroundColor: color, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, tension: 0.35, fill: false };
+  }
+  return { type: 'bar', label, data, backgroundColor: color, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 };
+}
+
+// Flips a chart between Bar and Line view and re-renders whichever section
+// owns it, so the chart, its Highlights panel, and its detail table all stay
+// in sync (only the chart's own look actually changes, but re-running the
+// section's render function is simpler and safer than re-deriving series
+// data here just to call the chart function directly).
+function toggleChartView(storeKey) {
+  chartViewMode[storeKey] = (chartViewMode[storeKey] === 'line') ? 'bar' : 'line';
+  if (storeKey === 'targetAchievementChartObj') renderPlatformTargets();
+  else renderTrendAnalysis();
+}
+
 function renderTrendChart(canvasId, storeKey, weekLabels, series) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
@@ -1337,10 +1367,8 @@ function renderTrendChart(canvasId, storeKey, weekLabels, series) {
   // extended platform list — e.g. the Leads KPI page's Leads Over Time chart,
   // which also includes Google Search — render every series they were given.
   const platforms = Object.keys(series).filter(p => series[p].some(v => v > 0));
-  // barPercentage close to 1 + a lower categoryPercentage packs each week's
-  // platform bars tightly together while leaving a clear visible gap before
-  // the next week's cluster starts — matches the reference layout.
-  const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 }));
+  const mode = chartViewMode[storeKey] || 'bar';
+  const datasets = platforms.map(p => buildComparisonDataset(p, series[p], PLATFORM_COLORS[p].hex, mode));
   if (window[storeKey]) {
     window[storeKey].data.labels = weekLabels;
     window[storeKey].data.datasets = datasets;
@@ -1591,7 +1619,11 @@ function renderTargetAchievementChart(canvasId, storeKey, weekLabels, series) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
-  const datasets = platforms.map(p => ({ label: p, data: series[p], backgroundColor: PLATFORM_COLORS[p].hex, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 }));
+  const mode = chartViewMode[storeKey] || 'bar';
+  const datasets = platforms.map(p => buildComparisonDataset(p, series[p], PLATFORM_COLORS[p].hex, mode));
+  // The 100% Target reference stays a dashed line in both views — it's a
+  // fixed threshold, not a per-platform value, so it never makes sense as a
+  // bar of its own.
   const targetLine = { label: '100% Target', type: 'line', data: weekLabels.map(() => 100), borderColor: '#d97706', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false };
   const allDatasets = [...datasets, targetLine];
 
