@@ -210,34 +210,37 @@ const PLATFORM_FIELDS = {
   ]
 };
 
-// Maps each platform's very different raw fields into the two numbers the
-// scoring engine actually needs: an Engagement total (interaction-type
-// activity — likes/reactions/comments/shares/reposts, NOT pure reach numbers
-// like Views/Impressions/Reach) and a Followers number (that week's follower
-// growth, kept consistent with how every other platform's "New Followers"
-// already worked). Views/Impressions/Reach/Watch Time/Profile Visits are
-// still captured and stored for reference but don't inflate the Engagement
-// score, since they measure reach rather than interaction.
-// Exception: Twitter only exposes Impressions + follower counts, so
-// Impressions is used as its Engagement proxy (no other interaction metric
-// is available for it).
+// Which of each platform's PLATFORM_FIELDS keys represent a follower-count
+// style number (a snapshot total, or that week's follower growth) rather
+// than an engagement action. These feed Follower Growth (10% weight)
+// instead, via followerGrowthKeys, and are the ONLY fields excluded when
+// Engagement (20% weight) is totaled below — every other Platform Metrics
+// field entered for that platform (Views, Likes, Shares, Reactions,
+// Comments, Reposts, Reach, Profile Visits, Interactions, Impressions,
+// Watch Time, etc.) now counts toward Engagement, so the number always
+// tallies with everything actually typed into the Log Week form.
+const FOLLOWER_FIELD_KEYS = {
+  'Facebook':      { growth: ['newFollowers'],              excludeFromEngagement: ['totalFollowers', 'newFollowers', 'unfollows'] },
+  'LinkedIn':       { growth: ['newFollowers', 'connections'], excludeFromEngagement: ['totalFollowers', 'newFollowers', 'connections'] },
+  'Twitter':       { growth: ['newFollowers'],              excludeFromEngagement: ['totalFollowers', 'newFollowers'] },
+  'TikTok':        { growth: ['newFollowers'],              excludeFromEngagement: ['followers', 'newFollowers'] },
+  'Instagram':     { growth: ['newFollowers'],              excludeFromEngagement: ['followers', 'newFollowers', 'unfollows'] },
+  'YouTube':       { growth: ['newSubs'],                   excludeFromEngagement: ['subscribers', 'newSubs'] },
+  'Google Search': { growth: [],                            excludeFromEngagement: [] }
+};
+
+// Maps each platform's raw Log Week fields into the two numbers the scoring
+// engine needs: Engagement (sum of every entered Platform Metrics field
+// except the follower-tracking ones above — so it's driven entirely by
+// PLATFORM_FIELDS and always matches what was actually logged) and Follower
+// Growth (sum of that platform's growth field(s) — e.g. LinkedIn counts both
+// New Followers and Connections, matching how it always has).
 function getEngagementAndFollowers(platform, v) {
-  switch (platform) {
-    case 'Facebook':
-      return { engagement: (v.reactions || 0) + (v.comments || 0) + (v.shares || 0), followerGrowth: v.newFollowers || 0 };
-    case 'LinkedIn':
-      return { engagement: (v.likes || 0) + (v.reactions || 0) + (v.reposts || 0) + (v.comments || 0), followerGrowth: (v.newFollowers || 0) + (v.connections || 0) };
-    case 'Twitter':
-      return { engagement: v.impressions || 0, followerGrowth: v.newFollowers || 0 };
-    case 'TikTok':
-      return { engagement: (v.likes || 0) + (v.shares || 0) + (v.comments || 0), followerGrowth: v.newFollowers || 0 };
-    case 'Instagram':
-      return { engagement: v.interactions || 0, followerGrowth: v.newFollowers || 0 };
-    case 'YouTube':
-      return { engagement: v.likes || 0, followerGrowth: v.newSubs || 0 };
-    default:
-      return { engagement: 0, followerGrowth: 0 };
-  }
+  const fields = PLATFORM_FIELDS[platform] || [];
+  const conf = FOLLOWER_FIELD_KEYS[platform] || { growth: [], excludeFromEngagement: [] };
+  const engagement = fields.reduce((sum, f) => conf.excludeFromEngagement.includes(f.key) ? sum : sum + (v[f.key] || 0), 0);
+  const followerGrowth = conf.growth.reduce((sum, key) => sum + (v[key] || 0), 0);
+  return { engagement, followerGrowth };
 }
 
 // Which raw_metrics label represents each platform's "Total Followers"-style
