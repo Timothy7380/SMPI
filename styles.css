@@ -205,6 +205,19 @@ canvas { display:block; }
 .form-group textarea{resize:vertical;min-height:70px;}
 .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(40,120,200,.12);}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+
+/* Collapsible subsection headers — Reports page's Platform Totals, Trend
+   Analysis, Platform Weekly Targets. Light blue + short height so each reads
+   as a subheading rather than a full white card, with a chevron that flips
+   to signal collapsed/expanded state. */
+.subsec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--blue-light);border-radius:var(--radius-sm);padding:10px 18px;margin:16px 0 12px;cursor:pointer;user-select:none;transition:background .15s;}
+.subsec-head:hover{background:#d5e6fa;}
+.subsec-head .card-title{font-size:13.5px;color:var(--blue);margin-bottom:1px;}
+.subsec-head .card-sub{font-size:11px;color:var(--blue-mid);}
+.subsec-chevron{width:18px;height:18px;flex-shrink:0;stroke:var(--blue);stroke-width:2.5;fill:none;transition:transform .2s;}
+.subsec-head.collapsed .subsec-chevron{transform:rotate(-90deg);}
+.subsec-body.collapsed{display:none;}
+.trend-badge{display:inline-flex;align-items:center;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;}
 .form-sec{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--sub2);margin:14px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 .divider{height:1px;background:var(--border);margin:14px 0;}
 

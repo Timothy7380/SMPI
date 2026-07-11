@@ -330,7 +330,18 @@ function weekBucketFromDate(dateStr) {
   return weekEnd;
 }
 function weekBucketKey(dateObj) {
-  return dateObj.toISOString().slice(0, 10);
+  // Local calendar date, NOT toISOString() (which converts to UTC first).
+  // A bucket date built from a plain "YYYY-MM-DD" string always lands on
+  // local midnight; in any positive-UTC-offset timezone (e.g. WAT, UTC+1),
+  // toISOString() would roll that back into the previous UTC day, making
+  // this key silently one day earlier than the date actually shown anywhere
+  // else in the app (getWeekLabel/weekBucketLabel use local fields and are
+  // unaffected, which is what made this so easy to miss). Using local
+  // fields directly keeps this key always in sync with the visible label.
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 function weekBucketLabel(dateObj) {
   return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -999,12 +1010,50 @@ function renderLogTable(){
   t.innerHTML=`<thead><tr><th>Start</th><th>Week</th><th>Platform</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Followers</th><th>Leads</th><th>Score</th><th>Grade</th><th>Details</th></tr></thead><tbody>${logData.map(r=>`<tr><td style="color:var(--sub2)">${fmtDateShort(r.weekStart)}</td><td style="color:var(--sub2)">${r.wk}</td><td><span class="pill pill-blue">${r.plat}</span></td><td>${r.mgr}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.followers}</td><td>${r.leads}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td class="truncate-cell" style="color:var(--sub2);font-size:12px;max-width:220px" title="${escAttr(fmtRawMetrics(r.rawMetrics))}">${fmtRawMetrics(r.rawMetrics)}</td></tr>`).join('')}</tbody>`;
 }
 
-// Overall performance log — all 7 KPIs combined across platforms, per brand per week.
-// Every row carries a "View Report" button (openWeekReportByIndex) that opens
-// the full week-report modal for that exact overallData row — a Dashboard-
-// style snapshot locked to that past week instead of always the latest one.
+// Which period chip is currently selected for the Weekly Performance Log
+// table (This Week / This Month / This Quarter / This Year) — same concept
+// as the Dashboard's period-bar, just filtering table rows instead of a
+// single stat.
+let reportsPeriod = 'week';
+function setReportsPeriod(el, period) {
+  reportsPeriod = period;
+  document.querySelectorAll('#reportsPeriodBar .pchip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderReportsTable();
+}
+
+// Whether a stored week_ending date falls inside the chosen period, measured
+// against today's real date (so "This Week" always means the actual current
+// calendar week, same definition weekBucketFromDate() uses everywhere else).
+// Rows with no stored date always pass through rather than being silently
+// hidden.
+function weekInPeriod(weekEndingStr, period) {
+  if (!weekEndingStr) return true;
+  const d = new Date(weekEndingStr + 'T00:00:00');
+  const now = new Date();
+  if (period === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  if (period === 'quarter') return d.getFullYear() === now.getFullYear() && Math.floor(d.getMonth() / 3) === Math.floor(now.getMonth() / 3);
+  if (period === 'year') return d.getFullYear() === now.getFullYear();
+  // 'week' (default): same calendar week as today, using the app's own
+  // Sunday-ending week bucket so it matches every other "this week" concept.
+  return weekBucketKey(weekBucketFromDate(d)) === weekBucketKey(weekBucketFromDate(now));
+}
+
+// Overall performance log — all 7 KPIs combined across platforms, per brand
+// per week, filtered to whichever period chip is selected. Every row carries
+// a "View Report" button (openWeekReportByIndex) that opens the full
+// week-report modal for that exact overallData row — a Dashboard-style
+// snapshot locked to that past week instead of always the latest one. The
+// button always references the row's ORIGINAL index in overallData (not its
+// position in the filtered list), so it still opens the right week.
 function renderReportsTable(){
-  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th><th></th></tr></thead><tbody>${overallData.map((r,i)=>`<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td><button class="btn-outline" style="font-size:11px;padding:6px 12px;white-space:nowrap" onclick="openWeekReportByIndex(${i})">View Report</button></td></tr>`).join('')}</tbody>`;
+  const rows = overallData
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => weekInPeriod(r.weekEnding, reportsPeriod));
+  const bodyHtml = rows.length
+    ? rows.map(({ r, i }) => `<tr><td style="color:var(--sub2)">${r.wk}</td><td>${brandManagers[r.brand]||''}</td><td><span class="pill pill-blue">${r.brand}</span></td><td>${r.engagementTotal.toLocaleString()}</td><td>${r.leads}</td><td>${r.followers}</td><td>${r.seoScore!=null?r.seoScore+'%':'—'}</td><td>${r.brandingScore!=null?r.brandingScore:'—'}</td><td>${r.audienceScore!=null?r.audienceScore:'—'}</td><td>${r.commScore!=null?r.commScore:'—'}</td><td style="font-weight:800">${r.score}</td><td><span style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=70?'var(--amber)':'var(--red)'}">${r.grade}</span></td><td><button class="btn-outline" style="font-size:11px;padding:6px 12px;white-space:nowrap" onclick="openWeekReportByIndex(${i})">View Report</button></td></tr>`).join('')
+    : `<tr><td colspan="13" style="padding:16px;color:var(--sub2);font-size:13px">No weeks logged in this period.</td></tr>`;
+  document.getElementById('reportsTable').innerHTML=`<thead><tr><th>Week</th><th>Manager</th><th>Brand</th><th>Engagement</th><th>Leads</th><th>Followers</th><th>SEO%</th><th>Branding</th><th>Audience</th><th>Comm</th><th>Score</th><th>Grade</th><th></th></tr></thead><tbody>${bodyHtml}</tbody>`;
 }
 
 // ═══ WEEK REPORT MODAL (Reports page) ═══
@@ -1098,16 +1147,46 @@ function renderPlatformTracker(){
   const groups = {};
   logData.forEach(r => {
     const key = r.brand + '||' + r.wk;
-    if (!groups[key]) groups[key] = { brand: r.brand, wk: r.wk, weekStart: r.weekStart, mgr: r.mgr, rows: [], latestCreatedAt: r.createdAt || 0 };
+    if (!groups[key]) groups[key] = { brand: r.brand, wk: r.wk, weekStart: r.weekStart, weekEnding: r.weekEnding, mgr: r.mgr, rows: [], latestCreatedAt: r.createdAt || 0 };
     if (!groups[key].weekStart && r.weekStart) groups[key].weekStart = r.weekStart;
+    if (!groups[key].weekEnding && r.weekEnding) groups[key].weekEnding = r.weekEnding;
     groups[key].rows.push(r);
     if (r.createdAt && new Date(r.createdAt) > new Date(groups[key].latestCreatedAt || 0)) groups[key].latestCreatedAt = r.createdAt;
   });
 
-  const groupList = Object.values(groups).sort((a,b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
+  let groupList = Object.values(groups).sort((a,b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
 
   if (!groupList.length) {
     container.innerHTML = `<div style="padding:20px;color:var(--sub2);font-size:13px">No weeks logged yet.</div>`;
+    return;
+  }
+
+  // Defaults the Week Start/Ending filter to just the most recently logged
+  // week (instead of dumping every week ever logged onto the page at once)
+  // the very first time there's data and nothing's been picked yet. Once the
+  // manager types a date or hits "Show All Weeks", their choice is left
+  // alone on every re-render (including the 20s auto-refresh poll).
+  const startEl = document.getElementById('trackerWeekStart');
+  const endEl = document.getElementById('trackerWeekEnd');
+  if (startEl && endEl && !startEl.value && !endEl.value && !startEl.dataset.userCleared) {
+    const latest = groupList[0];
+    if (latest.weekStart) startEl.value = latest.weekStart;
+    if (latest.weekEnding) endEl.value = latest.weekEnding;
+  }
+
+  const startVal = startEl ? startEl.value : '';
+  const endVal = endEl ? endEl.value : '';
+  if (startVal || endVal) {
+    groupList = groupList.filter(g => {
+      if (!g.weekEnding) return true; // no stored date to filter on — keep it visible rather than silently hiding real data
+      if (startVal && g.weekEnding < startVal) return false;
+      if (endVal && g.weekEnding > endVal) return false;
+      return true;
+    });
+  }
+
+  if (!groupList.length) {
+    container.innerHTML = `<div style="padding:20px;color:var(--sub2);font-size:13px">No weeks logged in that date range. <button class="btn-outline" style="font-size:11px;padding:6px 12px;margin-left:6px" onclick="clearTrackerFilter()">Show All Weeks</button></div>`;
     return;
   }
 
@@ -1321,22 +1400,62 @@ function renderTrendTable(tableId, weekLabels, series) {
   table.innerHTML = `<thead><tr><th>Platform</th>${weekLabels.map(w => `<th>${w}</th>`).join('')}</tr></thead><tbody>${platforms.map(p => `<tr><td><span class="pill pill-blue">${p}</span></td>${series[p].map(v => `<td>${v.toLocaleString()}</td>`).join('')}</tr>`).join('')}</tbody>`;
 }
 
+// Headline badge shown above a comparison chart, summarizing whether the
+// combined total across all platforms is trending up or down vs the
+// previous logged week — a single glance instead of reading every bar.
+// mode 'sum' adds every platform's value together (raw counts, e.g. total
+// followers); mode 'avgPts' averages them instead and reports the change in
+// percentage points (for series that are already a % themselves, e.g.
+// Target Achievement's "% of weekly target hit").
+function renderTrendBadge(containerId, weekLabels, series, mode = 'sum') {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const n = weekLabels.length;
+  const platforms = Object.keys(series);
+  const notEnough = `<span class="trend-badge" style="background:var(--bg);color:var(--sub2)">Log at least 2 weeks to see a trend</span>`;
+  if (n < 2 || !platforms.length) { container.innerHTML = notEnough; return; }
+
+  const aggAt = i => {
+    const vals = platforms.map(p => series[p][i]).filter(v => v != null);
+    if (!vals.length) return null;
+    const sum = vals.reduce((a, b) => a + b, 0);
+    return mode === 'avgPts' ? sum / vals.length : sum;
+  };
+  const latest = aggAt(n - 1);
+  const prev = aggAt(n - 2);
+  if (latest == null || prev == null) { container.innerHTML = notEnough; return; }
+  if (latest === 0 && prev === 0) { container.innerHTML = `<span class="trend-badge" style="background:var(--bg);color:var(--sub2)">No activity logged yet</span>`; return; }
+
+  const diff = latest - prev;
+  const up = diff >= 0;
+  const color = up ? 'var(--green)' : 'var(--red)';
+  const bg = up ? 'var(--green-bg)' : 'var(--red-bg)';
+  const arrow = up ? '▲' : '▼';
+  const changeText = mode === 'avgPts'
+    ? `${Math.abs(Math.round(diff))} pts`
+    : `${prev === 0 ? '100' : Math.round(Math.abs(diff) / Math.abs(prev) * 100)}%`;
+  container.innerHTML = `<span class="trend-badge" style="background:${bg};color:${color}">${arrow} ${up ? 'Trending up' : 'Trending down'} ${changeText} vs ${weekLabels[n - 2]}</span>`;
+}
+
 function renderTrendAnalysis() {
   const totalFollowersFn = r => (r.rawMetrics || {})[TOTAL_FOLLOWERS_LABEL[r.plat]] || 0;
   const newFollowersFn = r => r.followers || 0;
   const impressionsFn = r => (r.rawMetrics || {})[IMPRESSIONS_LABEL[r.plat]] || 0;
 
   const tf = buildWeeklyPlatformSeries(totalFollowersFn);
+  renderTrendBadge('trendTotalFollowersBadge', tf.weekLabels, tf.series);
   renderTrendChart('trendTotalFollowersChart', 'trendTotalFollowersChartObj', tf.weekLabels, tf.series);
   renderTrendInsights('trendTotalFollowersInsights', tf.weekLabels, tf.series, 'followers');
   renderTrendTable('trendTotalFollowersTable', tf.weekLabels, tf.series);
 
   const nf = buildWeeklyPlatformSeries(newFollowersFn);
+  renderTrendBadge('trendNewFollowersBadge', nf.weekLabels, nf.series);
   renderTrendChart('trendNewFollowersChart', 'trendNewFollowersChartObj', nf.weekLabels, nf.series);
   renderTrendInsights('trendNewFollowersInsights', nf.weekLabels, nf.series, 'new followers');
   renderTrendTable('trendNewFollowersTable', nf.weekLabels, nf.series);
 
   const im = buildWeeklyPlatformSeries(impressionsFn);
+  renderTrendBadge('trendImpressionsBadge', im.weekLabels, im.series);
   renderTrendChart('trendImpressionsChart', 'trendImpressionsChartObj', im.weekLabels, im.series);
   renderTrendInsights('trendImpressionsInsights', im.weekLabels, im.series, 'views/impressions');
   renderTrendTable('trendImpressionsTable', im.weekLabels, im.series);
@@ -1511,8 +1630,17 @@ function renderTargetDetailTable(tableId, weekLabels, series) {
 }
 
 function renderPlatformTargets() {
+  // This whole feature is scoped to whichever brand the sidebar pill has
+  // selected (same as the Dashboard/KPI pages) — unlike the rest of the
+  // Reports page, which shows every brand combined. Labeling it here makes
+  // that explicit instead of silently looking empty when a different brand
+  // with no logged actuals is selected.
+  const brandLabelEl = document.getElementById('targetsBrandLabel');
+  if (brandLabelEl) brandLabelEl.textContent = 'Brand: ' + currentDashboardBrand();
+
   renderPlatformTargetsCurrentTable();
   const ta = buildTargetAchievementSeries();
+  renderTrendBadge('targetAchievementBadge', ta.weekLabels, ta.series, 'avgPts');
   renderTargetAchievementChart('targetAchievementChart', 'targetAchievementChartObj', ta.weekLabels, ta.series);
   renderTargetInsights('targetAchievementInsights', ta.weekLabels, ta.series);
   renderTargetDetailTable('targetAchievementTable', ta.weekLabels, ta.series);
@@ -1869,6 +1997,27 @@ function setLBPeriod(btn,p){document.querySelectorAll('.tab-pill').forEach(t=>t.
 function selKPI(card,k){document.querySelectorAll('#page-dashboard .stat-card').forEach(c=>c.classList.remove('sel'));card.classList.add('sel');}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// Collapsible Reports-page subsections (Platform Totals, Trend Analysis,
+// Platform Weekly Targets) — just toggles a class on the header (for the
+// chevron rotation) and the body right below it (for display:none).
+function toggleSubsection(headEl, bodyId) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  const collapsed = body.classList.toggle('collapsed');
+  headEl.classList.toggle('collapsed', collapsed);
+}
+
+// Resets the Platform Log Tracker's date filter back to "show everything"
+// (it otherwise auto-narrows to the most recently logged week so the page
+// doesn't dump every week ever logged onto the screen at once).
+function clearTrackerFilter() {
+  const startEl = document.getElementById('trackerWeekStart');
+  const endEl = document.getElementById('trackerWeekEnd');
+  if (startEl) { startEl.value = ''; startEl.dataset.userCleared = '1'; }
+  if (endEl) endEl.value = '';
+  renderPlatformTracker();
+}
 
 // ═══ EDITING AN EXISTING PLATFORM LOG ENTRY ═══
 // Lets a manager/admin fix a mistaken number on an already-submitted
