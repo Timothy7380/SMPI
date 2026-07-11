@@ -351,6 +351,16 @@ function getWeekLabel(dateStr) {
   return 'Wk of ' + weekBucketLabel(weekBucketFromDate(dateStr));
 }
 
+// Label for the calendar week immediately before this one — used to show a
+// "last week" reference number alongside the This Week's Target vs Actual
+// table, so a manager can see what they're comparing against without
+// scrolling down to the chart.
+function getPrevWeekLabel() {
+  const prevWeekBucket = weekBucketFromDate();
+  prevWeekBucket.setDate(prevWeekBucket.getDate() - 7);
+  return 'Wk of ' + weekBucketLabel(prevWeekBucket);
+}
+
 // Short "Jun 26" style formatting for the Week Start date, used anywhere the
 // log tables show the full week range instead of just the week-ending label.
 function fmtDateShort(dateStr) {
@@ -1505,6 +1515,7 @@ function renderPlatformTargetsCurrentTable() {
 
   const brand = currentDashboardBrand();
   const weekLabel = getWeekLabel();
+  const prevWeekLabel = getPrevWeekLabel();
   const rows = PLATFORM_TOTALS_ORDER.map(p => {
     const target = PLATFORM_WEEKLY_TARGETS[p];
     const row = platformActualsData.find(r => r.brand === brand && r.wk === weekLabel && r.plat === p);
@@ -1515,16 +1526,31 @@ function renderPlatformTargetsCurrentTable() {
       : pct >= 100
         ? `<span class="pill pill-met">✓ Met · ${pct}%</span>`
         : `<span class="pill pill-miss">✗ ${pct}% of target</span>`;
+
+    // Last week's actual for the same platform+brand, shown purely as a
+    // reference number beside the input — so a manager can see at a glance
+    // whether this week is tracking up or down without leaving this table.
+    const prevRow = platformActualsData.find(r => r.brand === brand && r.wk === prevWeekLabel && r.plat === p);
+    const prevHtml = prevRow != null
+      ? `<span style="font-weight:600;color:var(--navy)">${prevRow.actual}</span>`
+      : `<span style="color:var(--sub2)">—</span>`;
+
     return `<tr>
       <td><span class="pill pill-blue">${p}</span></td>
       <td style="font-weight:700">${target}</td>
-      <td><input type="number" min="0" class="tbl-input" id="tgtActual_${p}" placeholder="e.g. ${target}" value="${actual != null ? actual : ''}"></td>
+      <td>${prevHtml}</td>
+      <td><input type="number" min="0" class="tbl-input" id="tgtActual_${p}" placeholder="e.g. ${target}" value="${actual != null ? actual : ''}" onchange="saveTargetActual('${p}')"></td>
       <td>${statusHtml}</td>
       <td><button class="btn-outline" style="font-size:11px;padding:6px 12px" id="tgtSaveBtn_${p}" onclick="saveTargetActual('${p}')">Save</button></td>
     </tr>`;
   }).join('');
 
-  container.innerHTML = `<thead><tr><th>Platform</th><th>Weekly Target</th><th>This Week's Actual</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody>`;
+  // The input's own onchange now saves automatically the moment a manager
+  // types a number and clicks/tabs away — so simply filling in the field is
+  // enough to persist it, instead of relying on a separate Save click that's
+  // easy to skip or navigate away from before pressing. The Save button
+  // stays as a visible, explicit fallback for anyone who prefers it.
+  container.innerHTML = `<thead><tr><th>Platform</th><th>Weekly Target</th><th>${prevWeekLabel}</th><th>This Week's Actual</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody>`;
 }
 
 // Groups platformActualsData into real calendar weeks (same weekBucketFromDate
