@@ -238,7 +238,10 @@ const FOLLOWER_FIELD_KEYS = {
 function getEngagementAndFollowers(platform, v) {
   const fields = PLATFORM_FIELDS[platform] || [];
   const conf = FOLLOWER_FIELD_KEYS[platform] || { growth: [], excludeFromEngagement: [] };
-  const engagement = fields.reduce((sum, f) => conf.excludeFromEngagement.includes(f.key) ? sum : sum + (v[f.key] || 0), 0);
+  // Rounded because YouTube's "Watch Time (hrs)" can be entered as a decimal
+  // (e.g. 4.5) — every other field is already a whole number, so without
+  // this the total would display an odd trailing decimal like "21,109.1".
+  const engagement = Math.round(fields.reduce((sum, f) => conf.excludeFromEngagement.includes(f.key) ? sum : sum + (v[f.key] || 0), 0));
   const followerGrowth = conf.growth.reduce((sum, key) => sum + (v[key] || 0), 0);
   return { engagement, followerGrowth };
 }
