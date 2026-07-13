@@ -1341,9 +1341,13 @@ let chartViewMode = {};
 // multi-week trend direction reads at a glance; Bar view keeps the original
 // tightly-clustered comparison bars. Both share the same color per platform
 // so switching views doesn't reshuffle which color means which platform.
+// Line view is styled after Google Trends' "Interest over time" chart — no
+// dots on the line itself (they only appear on hover), a thicker smoothed
+// curve, and monotone interpolation so the smoothing never overshoots above
+// or below the real data points the way default cubic bezier smoothing can.
 function buildComparisonDataset(label, data, color, mode) {
   if (mode === 'line') {
-    return { type: 'line', label, data, borderColor: color, backgroundColor: color, pointBackgroundColor: color, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, tension: 0.35, fill: false };
+    return { type: 'line', label, data, borderColor: color, backgroundColor: color, pointBackgroundColor: color, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8, borderWidth: 2.5, tension: 0.4, cubicInterpolationMode: 'monotone', fill: false };
   }
   return { type: 'bar', label, data, backgroundColor: color, borderRadius: 4, maxBarThickness: 28, barPercentage: 1, categoryPercentage: 0.7 };
 }
