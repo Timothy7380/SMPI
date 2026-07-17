@@ -145,7 +145,7 @@ async function upsertPlatformActual(brand, platform, actualValue) {
 
 // ═══ SCORING ALGORITHM ═══
 // Weekly targets, matching the numbers already shown in the KPI cards/Settings page.
-const KPI_TARGETS = { engagement: 600, leads: 40, followers: 400 };
+const KPI_TARGETS = { engagement: 600, leads: 10, followers: 400, seoPosts: 10 };
 // Weight of each of the 7 KPIs in the full composite score (sums to 100).
 const KPI_WEIGHTS = { engagement: 20, leads: 25, followers: 10, seo: 10, branding: 15, audience: 10, comm: 10 };
 
@@ -1885,7 +1885,7 @@ function renderSEOKPIPage() {
   const notRanking = weekPosts.filter(s => s.rank === 'Not found').length;
   const rankingRate = total > 0 ? Math.round(ranked.length / total * 100) : 0;
 
-  fillStatCard(cards[0], { label: 'Posts This Week', value: total, delta: total >= 15 ? '✓ Target met' : total > 0 ? (15 - total) + ' short of target' : 'No posts yet', deltaColor: total >= 15 ? 'var(--green)' : total > 0 ? 'var(--amber)' : 'var(--sub2)', thr: 'Target: 15', prog: Math.min(total / 15 * 100, 100), progColor: total >= 15 ? 'var(--green)' : 'var(--amber)' });
+  fillStatCard(cards[0], { label: 'Posts This Week', value: total, delta: total >= KPI_TARGETS.seoPosts ? '✓ Target met' : total > 0 ? (KPI_TARGETS.seoPosts - total) + ' short of target' : 'No posts yet', deltaColor: total >= KPI_TARGETS.seoPosts ? 'var(--green)' : total > 0 ? 'var(--amber)' : 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.seoPosts, prog: Math.min(total / KPI_TARGETS.seoPosts * 100, 100), progColor: total >= KPI_TARGETS.seoPosts ? 'var(--green)' : 'var(--amber)' });
   fillStatCard(cards[1], { label: 'Ranking Rate', value: rankingRate + '%', delta: total === 0 ? 'No posts yet' : rankingRate >= 50 ? '✓ On target' : 'Below 50% target', deltaColor: total === 0 ? 'var(--sub2)' : rankingRate >= 50 ? 'var(--green)' : 'var(--red)', thr: 'Target: 50%', prog: rankingRate, progColor: rankingRate >= 50 ? 'var(--green)' : 'var(--amber)' });
   fillStatCard(cards[2], { label: 'Ranking Posts', value: ranked.length, delta: ranked.length > 0 ? ranked.length + ' ranking (#1–#5)' : 'None ranking yet', deltaColor: ranked.length > 0 ? 'var(--green)' : 'var(--sub2)', thr: total > 0 ? Math.round(ranked.length / total * 100) + '% of posts' : '—', prog: total > 0 ? Math.round(ranked.length / total * 100) : 0, progColor: 'var(--green)' });
   fillStatCard(cards[3], { label: 'Not Ranking', value: notRanking, delta: notRanking > 0 ? 'Needs attention' : total > 0 ? '✓ None' : 'No posts yet', deltaColor: notRanking > 0 ? 'var(--red)' : 'var(--green)', thr: total > 0 ? Math.round(notRanking / total * 100) + '% of posts' : '—', prog: total > 0 ? Math.round(notRanking / total * 100) : 0, progColor: 'var(--red)' });
