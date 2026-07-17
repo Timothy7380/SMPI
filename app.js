@@ -226,7 +226,8 @@ const FOLLOWER_FIELD_KEYS = {
   'TikTok':        { growth: ['newFollowers'],              excludeFromEngagement: ['followers', 'newFollowers'] },
   'Instagram':     { growth: ['newFollowers'],              excludeFromEngagement: ['followers', 'newFollowers', 'unfollows'] },
   'YouTube':       { growth: ['newSubs'],                   excludeFromEngagement: ['subscribers', 'newSubs'] },
-  'Google Search': { growth: [],                            excludeFromEngagement: [] }
+  'Google Search': { growth: [],                            excludeFromEngagement: [] },
+  'Jiji':          { growth: [],                            excludeFromEngagement: [] }
 };
 
 // Maps each platform's raw Log Week fields into the two numbers the scoring
@@ -267,7 +268,8 @@ const PLATFORM_COLORS = {
   'TikTok':    { hex: '#db2777', bgVar: 'var(--pink-bg)',     textVar: 'var(--pink)' },
   'Instagram': { hex: '#d97706', bgVar: 'var(--amber-bg)',    textVar: 'var(--amber)' },
   'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' },
-  'Google Search': { hex: '#4285F4', bgVar: 'var(--indigo-bg)', textVar: 'var(--indigo)' }
+  'Google Search': { hex: '#4285F4', bgVar: 'var(--indigo-bg)', textVar: 'var(--indigo)' },
+  'Jiji':          { hex: '#16a34a', bgVar: 'var(--green-bg)',  textVar: 'var(--green)' }
 };
 
 // Formats a stored raw_metrics object (keyed by human-readable label, e.g.
@@ -1235,14 +1237,15 @@ function renderPlatformTracker(){
 const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
 const PLATFORM_TOTALS_COLOR = '#0d9488';
 
-// Google Search isn't a social platform (no followers/impressions/engagement
-// of its own), so it deliberately stays OUT of PLATFORM_TOTALS_ORDER — but it
-// is a real lead source, so anywhere leads specifically are broken down by
-// platform (the Reports page's Week Leads by Platform chart, and the Leads
-// KPI page's top-platform cards + trend chart) uses this extended list
-// instead, so Google Search leads show up everywhere leads are, without
-// bleeding into Followers/Impressions/Engagement/Platform Weekly Targets.
-const LEADS_PLATFORMS = [...PLATFORM_TOTALS_ORDER, 'Google Search'];
+// Google Search and Jiji aren't social platforms (no followers/impressions/
+// engagement of their own), so they deliberately stay OUT of
+// PLATFORM_TOTALS_ORDER — but they're real lead sources, so anywhere leads
+// specifically are broken down by platform (the Reports page's Week Leads by
+// Platform chart, and the Leads KPI page's top-platform cards + trend chart)
+// uses this extended list instead, so their leads show up everywhere leads
+// are, without bleeding into Followers/Impressions/Engagement/Platform
+// Weekly Targets.
+const LEADS_PLATFORMS = [...PLATFORM_TOTALS_ORDER, 'Google Search', 'Jiji'];
 
 function latestRowForPlatform(platform) {
   return logData
