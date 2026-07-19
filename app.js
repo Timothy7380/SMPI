@@ -470,7 +470,8 @@ function mapRowToQualEntry(row) {
     audienceNotes: row.audience_notes || '',
     commScore: row.comm_score,
     brandingScore: row.branding_score,
-    audienceScore: row.audience_score
+    audienceScore: row.audience_score,
+    createdAt: row.created_at
   };
 }
 
@@ -498,7 +499,8 @@ function mapRowToSeoEntry(row) {
     cat: row.category,
     rank: row.rank,
     verified: row.verified || 'Pending',
-    date: row.created_at ? new Date(row.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+    date: row.created_at ? new Date(row.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
+    createdAt: row.created_at
   };
 }
 
@@ -518,6 +520,33 @@ function aggregateOverall(platformRows, qualRows, seoRows) {
     g.platforms.push(r.plat);
     if (!g.weekEnding && r.weekEnding) g.weekEnding = r.weekEnding;
     if (r.createdAt && new Date(r.createdAt) > new Date(g.latestCreatedAt || 0)) g.latestCreatedAt = r.createdAt;
+  });
+
+  // AI Branding/Target Audience/Communication notes (weekly_qualitative) and
+  // SEO posts are entered from their own separate pages/actions, so a
+  // manager can very easily write and save this week's qualitative notes —
+  // or log a blog post — before logging any platform's metrics for that same
+  // week. Without a group for that week already, getDashboardRow()/
+  // latestOverallForBrand() (which only ever look inside this aggregated
+  // list) can never find it again, so the notes/scores or post look like
+  // they silently vanished even though they really did save to the
+  // database. Make sure every qualRows/seoRows week gets a group too, not
+  // just weeks that already have a platform log.
+  qualRows.forEach(q => {
+    const key = q.brand + '||' + q.wk;
+    if (!groups[key]) {
+      groups[key] = { brand: q.brand, wk: q.wk, weekEnding: q.weekEnding || null, mgr: brandManagers[q.brand] || '—', engagementTotal: 0, followers: 0, leads: 0, platforms: [], latestCreatedAt: q.createdAt || 0 };
+    } else if (q.createdAt && new Date(q.createdAt) > new Date(groups[key].latestCreatedAt || 0)) {
+      groups[key].latestCreatedAt = q.createdAt;
+    }
+  });
+  seoRows.forEach(s => {
+    const key = s.brand + '||' + s.wk;
+    if (!groups[key]) {
+      groups[key] = { brand: s.brand, wk: s.wk, weekEnding: null, mgr: brandManagers[s.brand] || '—', engagementTotal: 0, followers: 0, leads: 0, platforms: [], latestCreatedAt: s.createdAt || 0 };
+    } else if (s.createdAt && new Date(s.createdAt) > new Date(groups[key].latestCreatedAt || 0)) {
+      groups[key].latestCreatedAt = s.createdAt;
+    }
   });
 
   return Object.values(groups).map(g => {
