@@ -145,7 +145,26 @@ async function upsertPlatformActual(brand, platform, actualValue) {
 
 // ═══ SCORING ALGORITHM ═══
 // Weekly targets, matching the numbers already shown in the KPI cards/Settings page.
+// These are the defaults every brand uses unless overridden below.
 const KPI_TARGETS = { engagement: 600, leads: 10, followers: 400, seoPosts: 10 };
+
+// Per-brand overrides for KPI_TARGETS — only list the KPIs that differ from
+// the default above for that brand; anything not listed here falls back to
+// KPI_TARGETS as normal. Geoinfo Academy (Boluwatife) has a lower Followers
+// target and a higher Leads target than the other two brands.
+const BRAND_KPI_TARGETS = {
+  'Geoinfo Academy': { followers: 100, leads: 20 }
+};
+
+// Resolves the effective targets for a given brand, merging any brand-
+// specific override on top of the shared defaults. Every place that scores
+// or displays a KPI target should go through this instead of reading
+// KPI_TARGETS directly, so a brand override actually takes effect everywhere
+// (scoring, stat cards, insights, chart threshold lines) instead of just
+// wherever someone remembered to check for one.
+function targetsFor(brand) {
+  return { ...KPI_TARGETS, ...(BRAND_KPI_TARGETS[brand] || {}) };
+}
 // Weight of each of the 7 KPIs in the full composite score (sums to 100).
 const KPI_WEIGHTS = { engagement: 20, leads: 25, followers: 10, seo: 10, branding: 15, audience: 10, comm: 10 };
 
@@ -376,10 +395,11 @@ function fmtDateShort(dateStr) {
 // model). Rescaled to a 0-100 scale since SEO/Branding/Audience/Communication
 // (the remaining 45%) are AI/manually scored elsewhere and aren't part of
 // this form yet.
-function calcScore({ engagementTotal = 0, followers = 0, leads = 0 }) {
-  const engScore = Math.min(engagementTotal / KPI_TARGETS.engagement * 100, 100);
-  const leadsScore = Math.min(leads / KPI_TARGETS.leads * 100, 100);
-  const followersScore = Math.min(followers / KPI_TARGETS.followers * 100, 100);
+function calcScore({ engagementTotal = 0, followers = 0, leads = 0, brand = null }) {
+  const t = targetsFor(brand);
+  const engScore = Math.min(engagementTotal / t.engagement * 100, 100);
+  const leadsScore = Math.min(leads / t.leads * 100, 100);
+  const followersScore = Math.min(followers / t.followers * 100, 100);
   const weighted = (engScore * 20 + leadsScore * 25 + followersScore * 10) / 55;
   return Math.round(weighted);
 }
@@ -399,10 +419,11 @@ function rankToScore(rank) {
 // weekly_qualitative row. Any KPI that hasn't been logged yet for the week is
 // left out and the remaining weights are rescaled to 100, so the score is
 // always meaningful even before every KPI has data.
-function calcFullScore({ engagementTotal = 0, followers = 0, leads = 0, seoScore = null, brandingScore = null, audienceScore = null, commScore = null }) {
-  const engScore = Math.min(engagementTotal / KPI_TARGETS.engagement * 100, 100);
-  const leadsScore = Math.min(leads / KPI_TARGETS.leads * 100, 100);
-  const followersScore = Math.min(followers / KPI_TARGETS.followers * 100, 100);
+function calcFullScore({ engagementTotal = 0, followers = 0, leads = 0, seoScore = null, brandingScore = null, audienceScore = null, commScore = null, brand = null }) {
+  const t = targetsFor(brand);
+  const engScore = Math.min(engagementTotal / t.engagement * 100, 100);
+  const leadsScore = Math.min(leads / t.leads * 100, 100);
+  const followersScore = Math.min(followers / t.followers * 100, 100);
   const parts = [
     { w: KPI_WEIGHTS.engagement, v: engScore },
     { w: KPI_WEIGHTS.leads, v: leadsScore },
@@ -562,7 +583,8 @@ function aggregateOverall(platformRows, qualRows, seoRows) {
       seoScore,
       brandingScore: qual ? qual.brandingScore : null,
       audienceScore: qual ? qual.audienceScore : null,
-      commScore: qual ? qual.commScore : null
+      commScore: qual ? qual.commScore : null,
+      brand: g.brand
     });
     return { ...g, ...breakdown, grade: gradeFor(breakdown.score), seoPostCount: weekSeoRows.length, qual };
   }).sort((a, b) => new Date(b.latestCreatedAt || 0) - new Date(a.latestCreatedAt || 0));
@@ -920,13 +942,14 @@ function generateRealInsights(row){
     insights.push({ title:'Branding not scored yet', body:'Write this week\'s branding notes on the AI Review page and click "Score With AI" to get a real score.', bg:'var(--bg)', border:'var(--sub2)', titleColor:'var(--sub2)' });
   }
 
-  const leadsPct=Math.round((row.leads||0)/KPI_TARGETS.leads*100);
-  if ((row.leads||0)>=KPI_TARGETS.leads) insights.push({ title:'Lead generation on target', body:`${row.leads} leads this week vs a target of ${KPI_TARGETS.leads} (${leadsPct}%). Keep the current CTA strategy going.`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
-  else insights.push({ title:'Lead generation needs attention', body:`${row.leads||0} leads vs a target of ${KPI_TARGETS.leads} (${leadsPct}% of target). Consider a stronger CTA in next week's posts.`, bg:'var(--amber-bg)', border:'var(--amber)', titleColor:'var(--amber)' });
+  const rowTargets = targetsFor(row.brand);
+  const leadsPct=Math.round((row.leads||0)/rowTargets.leads*100);
+  if ((row.leads||0)>=rowTargets.leads) insights.push({ title:'Lead generation on target', body:`${row.leads} leads this week vs a target of ${rowTargets.leads} (${leadsPct}%). Keep the current CTA strategy going.`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+  else insights.push({ title:'Lead generation needs attention', body:`${row.leads||0} leads vs a target of ${rowTargets.leads} (${leadsPct}% of target). Consider a stronger CTA in next week's posts.`, bg:'var(--amber-bg)', border:'var(--amber)', titleColor:'var(--amber)' });
 
-  const flwPct=Math.round((row.followers||0)/KPI_TARGETS.followers*100);
-  if ((row.followers||0)>=KPI_TARGETS.followers) insights.push({ title:'Follower growth on target', body:`${row.followers} new followers this week vs a target of ${KPI_TARGETS.followers} (${flwPct}%).`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
-  else insights.push({ title:'Follower growth below target', body:`${row.followers||0} new followers vs a target of ${KPI_TARGETS.followers} (${flwPct}% of target). Consider collaborations or giveaway posts to accelerate growth.`, bg:'var(--red-bg)', border:'var(--red)', titleColor:'var(--red)' });
+  const flwPct=Math.round((row.followers||0)/rowTargets.followers*100);
+  if ((row.followers||0)>=rowTargets.followers) insights.push({ title:'Follower growth on target', body:`${row.followers} new followers this week vs a target of ${rowTargets.followers} (${flwPct}%).`, bg:'var(--green-bg)', border:'var(--green)', titleColor:'var(--green)' });
+  else insights.push({ title:'Follower growth below target', body:`${row.followers||0} new followers vs a target of ${rowTargets.followers} (${flwPct}% of target). Consider collaborations or giveaway posts to accelerate growth.`, bg:'var(--red-bg)', border:'var(--red)', titleColor:'var(--red)' });
 
   if (row.commScore!=null){
     const c=row.commScore;
@@ -951,6 +974,7 @@ function renderInsightsInto(containerId, row){
 // and all 7 KPI stat cards.
 function renderDashboardKPIs(){
   const row=getDashboardRow();
+  const dashTargets=targetsFor(currentDashboardBrand());
   const donutNum=document.getElementById('donutScoreNum');
   const overallNum=document.getElementById('overallScore');
   // Document order: the 4 g4 cards (Engagement/Leads/Follower Growth/SEO)
@@ -963,9 +987,9 @@ function renderDashboardKPIs(){
     if (donutNum) donutNum.textContent='—';
     if (overallNum) overallNum.textContent='—';
     if (window.scoreDonutObj){ window.scoreDonutObj.data.datasets[0].data=[0,100]; window.scoreDonutObj.update(); }
-    fillStatCard(cards[0], { label:'Engagement', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+KPI_TARGETS.engagement.toLocaleString(), prog:0 });
-    fillStatCard(cards[1], { label:'Leads Generated', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+KPI_TARGETS.leads, prog:0 });
-    fillStatCard(cards[2], { label:'Follower Growth', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+KPI_TARGETS.followers, prog:0 });
+    fillStatCard(cards[0], { label:'Engagement', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+dashTargets.engagement.toLocaleString(), prog:0 });
+    fillStatCard(cards[1], { label:'Leads Generated', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+dashTargets.leads, prog:0 });
+    fillStatCard(cards[2], { label:'Follower Growth', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: '+dashTargets.followers, prog:0 });
     fillStatCard(cards[3], { label:'SEO Performance', value:'—', delta:'No data logged yet', deltaColor:'var(--sub2)', thr:'Target: 50%', prog:0 });
     fillStatCard(cards[4], { label:'AI Branding Score', value:'—/100', delta:'Not scored yet', deltaColor:'var(--sub2)', thr:'Target: 75+', prog:0 });
     fillStatCard(cards[5], { label:'Target Audience Quality', value:'—/100', delta:'Not scored yet', deltaColor:'var(--sub2)', thr:'Target: 70+', prog:0 });
@@ -979,17 +1003,17 @@ function renderDashboardKPIs(){
   if (overallNum) overallNum.textContent=row.score;
   if (window.scoreDonutObj){ window.scoreDonutObj.data.datasets[0].data=[row.score,100-row.score]; window.scoreDonutObj.update(); }
 
-  const engPct=Math.round(row.engagementTotal/KPI_TARGETS.engagement*100);
+  const engPct=Math.round(row.engagementTotal/dashTargets.engagement*100);
   const engColor=engPct>=100?'var(--green)':engPct>=70?'var(--amber)':'var(--red)';
-  fillStatCard(cards[0], { label:'Engagement', value:row.engagementTotal.toLocaleString(), delta:(engPct>=100?'✓ ':'')+engPct+'% of target', deltaColor:engColor, thr:'Target: '+KPI_TARGETS.engagement.toLocaleString(), prog:engPct, progColor:engColor });
+  fillStatCard(cards[0], { label:'Engagement', value:row.engagementTotal.toLocaleString(), delta:(engPct>=100?'✓ ':'')+engPct+'% of target', deltaColor:engColor, thr:'Target: '+dashTargets.engagement.toLocaleString(), prog:engPct, progColor:engColor });
 
-  const leadsPct=Math.round((row.leads||0)/KPI_TARGETS.leads*100);
+  const leadsPct=Math.round((row.leads||0)/dashTargets.leads*100);
   const leadsColor=leadsPct>=100?'var(--green)':leadsPct>=70?'var(--amber)':'var(--red)';
-  fillStatCard(cards[1], { label:'Leads Generated', value:row.leads, delta:(leadsPct>=100?'✓ ':'⚠ ')+leadsPct+'% of target', deltaColor:leadsColor, thr:'Target: '+KPI_TARGETS.leads, prog:leadsPct, progColor:leadsColor });
+  fillStatCard(cards[1], { label:'Leads Generated', value:row.leads, delta:(leadsPct>=100?'✓ ':'⚠ ')+leadsPct+'% of target', deltaColor:leadsColor, thr:'Target: '+dashTargets.leads, prog:leadsPct, progColor:leadsColor });
 
-  const flwPct=Math.round((row.followers||0)/KPI_TARGETS.followers*100);
+  const flwPct=Math.round((row.followers||0)/dashTargets.followers*100);
   const flwColor=flwPct>=100?'var(--green)':flwPct>=70?'var(--amber)':'var(--red)';
-  fillStatCard(cards[2], { label:'Follower Growth', value:row.followers, delta:(flwPct>=100?'✓ ':'⚠ ')+flwPct+'% of target', deltaColor:flwColor, thr:'Target: '+KPI_TARGETS.followers, prog:flwPct, progColor:flwColor });
+  fillStatCard(cards[2], { label:'Follower Growth', value:row.followers, delta:(flwPct>=100?'✓ ':'⚠ ')+flwPct+'% of target', deltaColor:flwColor, thr:'Target: '+dashTargets.followers, prog:flwPct, progColor:flwColor });
 
   const seoVal=row.seoScore;
   const seoColor=seoVal==null?'var(--sub2)':seoVal>=50?'var(--green)':'var(--red)';
@@ -1124,11 +1148,12 @@ function renderWeekReportModal(row){
 
   // Same target/threshold/color conventions as renderDashboardKPIs(), just
   // reading off the clicked row instead of always getDashboardRow().
-  const engPct = Math.round(row.engagementTotal / KPI_TARGETS.engagement * 100);
+  const wrTargets = targetsFor(row.brand);
+  const engPct = Math.round(row.engagementTotal / wrTargets.engagement * 100);
   const engColor = engPct>=100?'var(--green)':engPct>=70?'var(--amber)':'var(--red)';
-  const leadsPct = Math.round((row.leads||0) / KPI_TARGETS.leads * 100);
+  const leadsPct = Math.round((row.leads||0) / wrTargets.leads * 100);
   const leadsColor = leadsPct>=100?'var(--green)':leadsPct>=70?'var(--amber)':'var(--red)';
-  const flwPct = Math.round((row.followers||0) / KPI_TARGETS.followers * 100);
+  const flwPct = Math.round((row.followers||0) / wrTargets.followers * 100);
   const flwColor = flwPct>=100?'var(--green)':flwPct>=70?'var(--amber)':'var(--red)';
   const seoColor = row.seoScore==null?'var(--sub2)':row.seoScore>=50?'var(--green)':'var(--red)';
   const brandColor = row.brandingScore==null?'var(--sub2)':row.brandingScore>=75?'var(--purple)':row.brandingScore>=50?'var(--amber)':'var(--red)';
@@ -1841,11 +1866,12 @@ function renderLeadsKPIPage() {
   if (!scope) return;
   const cards = scope.querySelectorAll('.stat-card');
   const brand = currentDashboardBrand();
+  const leadsTarget = targetsFor(brand).leads;
   const row = getDashboardRow();
   const brandRows = logData.filter(r => r.brand === brand);
 
   if (!row) {
-    fillStatCard(cards[0], { label: 'Total Leads', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.leads + '/wk', prog: 0 });
+    fillStatCard(cards[0], { label: 'Total Leads', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + leadsTarget + '/wk', prog: 0 });
     for (let i = 1; i < cards.length; i++) fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
   } else {
     const weekRows = rowsForBrandWeek(brand, row.wk);
@@ -1854,9 +1880,9 @@ function renderLeadsKPIPage() {
     // regardless), so it's included here alongside the normal 6 — just not
     // on the Followers/Engagement pages, where it has no data anyway.
     const top3 = topPlatformsBy(weekRows, r => r.leads, 3, LEADS_PLATFORMS);
-    const pct = Math.round(row.leads / KPI_TARGETS.leads * 100);
+    const pct = Math.round(row.leads / leadsTarget * 100);
     const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
-    fillStatCard(cards[0], { label: 'Total Leads', value: row.leads, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.leads + '/wk', prog: pct, progColor: pctColor });
+    fillStatCard(cards[0], { label: 'Total Leads', value: row.leads, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + leadsTarget + '/wk', prog: pct, progColor: pctColor });
     for (let i = 1; i < cards.length; i++) {
       const p = top3[i - 1];
       if (p) {
@@ -1876,18 +1902,19 @@ function renderFollowersKPIPage() {
   if (!scope) return;
   const cards = scope.querySelectorAll('.stat-card');
   const brand = currentDashboardBrand();
+  const followersTarget = targetsFor(brand).followers;
   const row = getDashboardRow();
   const brandRows = logData.filter(r => r.brand === brand);
 
   if (!row) {
-    fillStatCard(cards[0], { label: 'Total New Followers', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.followers + '/wk', prog: 0 });
+    fillStatCard(cards[0], { label: 'Total New Followers', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + followersTarget + '/wk', prog: 0 });
     for (let i = 1; i < cards.length; i++) fillStatCard(cards[i], { label: 'No platform logged', value: '—', delta: '', thr: '', prog: 0 });
   } else {
     const weekRows = rowsForBrandWeek(brand, row.wk);
     const top3 = topPlatformsBy(weekRows, r => r.followers, 3);
-    const pct = Math.round(row.followers / KPI_TARGETS.followers * 100);
+    const pct = Math.round(row.followers / followersTarget * 100);
     const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
-    fillStatCard(cards[0], { label: 'Total New Followers', value: row.followers, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.followers + '/wk', prog: pct, progColor: pctColor });
+    fillStatCard(cards[0], { label: 'Total New Followers', value: row.followers, delta: (pct >= 100 ? '✓ ' : '⚠ ') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + followersTarget + '/wk', prog: pct, progColor: pctColor });
     for (let i = 1; i < cards.length; i++) {
       const p = top3[i - 1];
       if (p) {
@@ -1994,13 +2021,14 @@ function buildMainChartSeries(key, brand) {
     const counts = {};
     withBucket.forEach(wk => { counts[wk] = (counts[wk] || 0) + 1; });
     const keys = Object.keys(counts);
-    return { labels: keys.map(k => k.replace('Wk of ', '')), data: keys.map(k => counts[k]), thr: 15 };
+    return { labels: keys.map(k => k.replace('Wk of ', '')), data: keys.map(k => counts[k]), thr: KPI_TARGETS.seoPosts };
   }
   const valueFn = key === 'eng' ? (r => r.engagementTotal || 0) : key === 'leads' ? (r => r.leads || 0) : (r => r.followers || 0);
   const series = buildWeeklyPlatformSeries(valueFn, 4, brandRows);
   const labels = series.weekLabels;
   const data = labels.map((_, i) => PLATFORM_TOTALS_ORDER.reduce((sum, p) => sum + (series.series[p][i] || 0), 0));
-  const thr = key === 'eng' ? KPI_TARGETS.engagement : key === 'leads' ? KPI_TARGETS.leads : KPI_TARGETS.followers;
+  const bt = targetsFor(brand);
+  const thr = key === 'eng' ? bt.engagement : key === 'leads' ? bt.leads : bt.followers;
   return { labels, data, thr };
 }
 
@@ -2239,7 +2267,7 @@ async function submitLog(){
   });
   const { engagement: engagementTotal, followerGrowth: followers } = getEngagementAndFollowers(platform, rawValues);
   const leads = +document.getElementById('lgLeads').value || 0;
-  const score = calcScore({ engagementTotal, followers, leads });
+  const score = calcScore({ engagementTotal, followers, leads, brand: selBrand });
   const grade = gradeFor(score);
 
   // Resubmitting the same platform for a week that's already logged updates
