@@ -799,6 +799,25 @@ let platformActualsData = []; // per-brand-per-week-per-platform "actual" number
 // against this to decide Met/Missed.
 const PLATFORM_WEEKLY_TARGETS = { 'Facebook': 100, 'LinkedIn': 100, 'Twitter': 10, 'TikTok': 50, 'Instagram': 50, 'YouTube': 50 };
 
+// Per-brand overrides for PLATFORM_WEEKLY_TARGETS — same pattern as
+// BRAND_KPI_TARGETS/targetsFor above: only list the platforms that differ
+// from the shared default for that brand. Geoinfo Academy (Boluwatife) runs
+// its own set of per-platform weekly targets; GeoInfotech and Geostore are
+// untouched and keep reading PLATFORM_WEEKLY_TARGETS as-is.
+const BRAND_PLATFORM_WEEKLY_TARGETS = {
+  'Geoinfo Academy': { 'Facebook': 20, 'LinkedIn': 50, 'Twitter': 20, 'TikTok': 20, 'Instagram': 20, 'YouTube': 20 }
+};
+
+// Resolves the effective per-platform weekly targets for a given brand,
+// merging any brand-specific override on top of PLATFORM_WEEKLY_TARGETS.
+// Every place that reads a platform's weekly target (This Week's editor
+// table, Met/Missed toasts, the Target Achievement chart/table's % math)
+// should go through this instead of reading PLATFORM_WEEKLY_TARGETS
+// directly, so a brand override actually applies everywhere.
+function platformTargetsFor(brand) {
+  return { ...PLATFORM_WEEKLY_TARGETS, ...(BRAND_PLATFORM_WEEKLY_TARGETS[brand] || {}) };
+}
+
 window.onload=()=>{
   // Score donut
   window.scoreDonutObj=new Chart(document.getElementById('scoreDonut'),{type:'doughnut',data:{labels:['Score','Remaining'],datasets:[{data:[0,100],backgroundColor:['#2878C8','#e5f0fa'],borderWidth:0}]},options:{cutout:'70%',plugins:{legend:{display:false},tooltip:{enabled:false}}}});
@@ -1581,7 +1600,7 @@ async function saveTargetActual(platform) {
   try {
     await upsertPlatformActual(brand, platform, val);
     await refreshAllData();
-    const target = PLATFORM_WEEKLY_TARGETS[platform];
+    const target = platformTargetsFor(brand)[platform];
     showToast(`${platform}: ${val}/${target} logged — ${val >= target ? 'target met ✓' : 'below target'}`);
   } catch (e) {
     console.error(e);
@@ -1605,8 +1624,9 @@ function renderPlatformTargetsCurrentTable() {
   const brand = currentDashboardBrand();
   const weekLabel = getWeekLabel();
   const prevWeekLabel = getPrevWeekLabel();
+  const brandTargets = platformTargetsFor(brand);
   const rows = PLATFORM_TOTALS_ORDER.map(p => {
-    const target = PLATFORM_WEEKLY_TARGETS[p];
+    const target = brandTargets[p];
     const row = platformActualsData.find(r => r.brand === brand && r.wk === weekLabel && r.plat === p);
     const actual = row ? row.actual : null;
     const pct = actual != null ? Math.round(actual / target * 100) : null;
@@ -1650,6 +1670,7 @@ function renderPlatformTargetsCurrentTable() {
 // misleading "0% achieved" bar for weeks nothing was logged at all.
 function buildTargetAchievementSeries(maxWeeks = 4) {
   const brand = currentDashboardBrand();
+  const brandTargets = platformTargetsFor(brand);
   const rows = platformActualsData.filter(r => r.brand === brand);
   const rowsWithBucket = rows.map(r => {
     const bucketDate = weekBucketFromDate(r.weekEnding || r.createdAt);
@@ -1666,7 +1687,7 @@ function buildTargetAchievementSeries(maxWeeks = 4) {
   rowsWithBucket.forEach(rb => {
     const wi = weekKeys.indexOf(rb.key);
     if (wi === -1 || !series[rb.row.plat]) return;
-    const target = PLATFORM_WEEKLY_TARGETS[rb.row.plat];
+    const target = brandTargets[rb.row.plat];
     series[rb.row.plat][wi] = Math.round((rb.row.actual || 0) / target * 100);
   });
   return { weekLabels: weekKeys.map(k => weekMeta[k].label), series };
@@ -1737,15 +1758,16 @@ function renderTargetInsights(containerId, weekLabels, series) {
 // Weekly detail table — Platform rows × week columns, each cell the %
 // of target hit that week (green ≥100%, red otherwise), same shape as the
 // other Trend Analysis detail tables.
-function renderTargetDetailTable(tableId, weekLabels, series) {
+function renderTargetDetailTable(tableId, weekLabels, series, brand) {
   const table = document.getElementById(tableId);
   if (!table) return;
+  const brandTargets = platformTargetsFor(brand);
   const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
   if (!platforms.length) {
     table.innerHTML = `<tbody><tr><td style="padding:14px;color:var(--sub2);font-size:13px">No actuals logged yet.</td></tr></tbody>`;
     return;
   }
-  table.innerHTML = `<thead><tr><th>Platform</th><th>Weekly Target</th>${weekLabels.map(w => `<th>${w}</th>`).join('')}</tr></thead><tbody>${platforms.map(p => `<tr><td><span class="pill pill-blue">${p}</span></td><td style="font-weight:700">${PLATFORM_WEEKLY_TARGETS[p]}</td>${series[p].map(v => v == null ? `<td style="color:var(--sub2)">—</td>` : `<td><span style="font-weight:700;color:${v >= 100 ? 'var(--green)' : 'var(--red)'}">${v}%</span></td>`).join('')}</tr>`).join('')}</tbody>`;
+  table.innerHTML = `<thead><tr><th>Platform</th><th>Weekly Target</th>${weekLabels.map(w => `<th>${w}</th>`).join('')}</tr></thead><tbody>${platforms.map(p => `<tr><td><span class="pill pill-blue">${p}</span></td><td style="font-weight:700">${brandTargets[p]}</td>${series[p].map(v => v == null ? `<td style="color:var(--sub2)">—</td>` : `<td><span style="font-weight:700;color:${v >= 100 ? 'var(--green)' : 'var(--red)'}">${v}%</span></td>`).join('')}</tr>`).join('')}</tbody>`;
 }
 
 function renderPlatformTargets() {
@@ -1754,15 +1776,16 @@ function renderPlatformTargets() {
   // Reports page, which shows every brand combined. Labeling it here makes
   // that explicit instead of silently looking empty when a different brand
   // with no logged actuals is selected.
+  const brand = currentDashboardBrand();
   const brandLabelEl = document.getElementById('targetsBrandLabel');
-  if (brandLabelEl) brandLabelEl.textContent = 'Brand: ' + currentDashboardBrand();
+  if (brandLabelEl) brandLabelEl.textContent = 'Brand: ' + brand;
 
   renderPlatformTargetsCurrentTable();
   const ta = buildTargetAchievementSeries();
   renderTrendBadge('targetAchievementBadge', ta.weekLabels, ta.series, 'avgPts');
   renderTargetAchievementChart('targetAchievementChart', 'targetAchievementChartObj', ta.weekLabels, ta.series);
   renderTargetInsights('targetAchievementInsights', ta.weekLabels, ta.series);
-  renderTargetDetailTable('targetAchievementTable', ta.weekLabels, ta.series);
+  renderTargetDetailTable('targetAchievementTable', ta.weekLabels, ta.series, brand);
 }
 
 // ═══ KPI DETAIL PAGES — wire real Log Week data everywhere ═══
