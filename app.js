@@ -356,6 +356,32 @@ function onLgPlatformChange() {
   renderPlatformFieldInputs(platform);
 }
 
+// Rebuilds the Platform dropdown's option list to match whichever brand is
+// selected, so a brand with excluded platforms (see BRAND_EXCLUDED_PLATFORMS
+// — currently just Geostore, which doesn't run Webinars or Xspace) never
+// lets a manager pick one it doesn't actually have. Google Search/Jiji are
+// lead sources rather than brand-specific channels, so they're always
+// included regardless of brand. Keeps whichever platform is already
+// selected if it's still valid for the new brand; otherwise falls back to
+// whatever the browser lands on (the first option) and re-renders the
+// Platform Metrics fields to match.
+function populatePlatformOptions(brand, preferredValue) {
+  const platformEl = document.getElementById('lgPlatform');
+  if (!platformEl) return;
+  const current = preferredValue || platformEl.value;
+  const options = [...platformsForBrand(brand), 'Google Search', 'Jiji'];
+  platformEl.innerHTML = options.map(p => `<option${p === current ? ' selected' : ''}>${p}</option>`).join('');
+  renderPlatformFieldInputs(platformEl.value);
+}
+
+// Fired when the Brand dropdown changes (and once on modal open) so the
+// Platform dropdown always reflects that brand's actual platform list.
+function onLgBrandChange() {
+  const brandSelectEl = document.getElementById('lgBrand');
+  const brand = brandSelectEl ? brandSelectEl.value.replace(/ \(.*\)/, '') : '';
+  populatePlatformOptions(brand);
+}
+
 // Turns a "Week Ending" date into a stable label so that logging multiple
 // platforms for the same real week produces the SAME week, instead of a
 // fresh "Wk N" every time someone hits submit.
@@ -1252,11 +1278,6 @@ function renderPlatformTracker(){
   const container = document.getElementById('platformTracker');
   if (!container) return;
 
-  // Reuses PLATFORM_TOTALS_ORDER (declared further down the file, but this
-  // function only ever runs after the whole script has parsed) instead of
-  // its own separate hardcoded list, so a new platform only needs adding in
-  // one place to show up here too.
-  const ALL_PLATFORMS = PLATFORM_TOTALS_ORDER;
   const groups = {};
   logData.forEach(r => {
     const key = r.brand + '||' + r.wk;
@@ -1306,11 +1327,15 @@ function renderPlatformTracker(){
   container.innerHTML = groupList.map(g => {
     const overall = overallData.find(o => o.brand === g.brand && o.wk === g.wk);
     const loggedPlatforms = new Set(g.rows.map(r => r.plat));
-    const platformPills = ALL_PLATFORMS.map(p => {
+    // This brand's own platform list — so Geostore weeks show 6 pills
+    // (never a permanently-✗ Webinar/Xspace it can't actually log), while
+    // other brands still show all 8.
+    const groupPlatforms = platformsForBrand(g.brand);
+    const platformPills = groupPlatforms.map(p => {
       const done = loggedPlatforms.has(p);
       return `<span class="pill ${done?'pill-met':'pill-miss'}" style="margin-right:4px">${done?'✓':'✗'} ${p}</span>`;
     }).join('');
-    const extraPlatforms = [...loggedPlatforms].filter(p => !ALL_PLATFORMS.includes(p));
+    const extraPlatforms = [...loggedPlatforms].filter(p => !groupPlatforms.includes(p));
     const extraPills = extraPlatforms.map(p => `<span class="pill pill-blue" style="margin-right:4px">✓ ${p}</span>`).join('');
 
     return `
@@ -1346,6 +1371,25 @@ const PLATFORM_TOTALS_COLOR = '#0d9488';
 // is used (Platform Totals, Trend Analysis, Engagement/Followers/Leads KPI
 // pages, Platform Log Tracker, Dashboard's main chart).
 const TARGET_TRACKED_PLATFORMS = PLATFORM_TOTALS_ORDER.filter(p => p !== 'Webinar' && p !== 'Xspace');
+
+// Per-brand platform exclusions — Geostore doesn't run Webinars or Xspace
+// (X/Twitter Spaces), so those two are hidden from Geostore only; the other
+// brands still have full access. Mirrors the BRAND_KPI_TARGETS/targetsFor
+// pattern used for per-brand target overrides above.
+const BRAND_EXCLUDED_PLATFORMS = {
+  'Geostore': ['Webinar', 'Xspace']
+};
+
+// Resolves the platforms a given brand actually gets to use — every place
+// that lists "this brand's platforms" (the Log Week form's Platform
+// dropdown, the Engagement KPI page's Platforms Logged count, the Platform
+// Log Tracker's per-week pills) should go through this instead of reading
+// PLATFORM_TOTALS_ORDER directly, so a brand exclusion actually takes
+// effect everywhere instead of just wherever someone remembered to check.
+function platformsForBrand(brand) {
+  const excluded = BRAND_EXCLUDED_PLATFORMS[brand] || [];
+  return PLATFORM_TOTALS_ORDER.filter(p => !excluded.includes(p));
+}
 
 // Google Search and Jiji aren't social platforms (no followers/impressions/
 // engagement of their own), so they deliberately stay OUT of
@@ -1881,18 +1925,19 @@ function renderEngagementKPIPage() {
     fillStatCard(cards[0], { label: 'Total Engagement', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: 0 });
     fillStatCard(cards[1], { label: 'Engagement Score', value: '—', delta: '', thr: '', prog: 0 });
     fillStatCard(cards[2], { label: 'Top Platform', value: '—', delta: '', thr: '', prog: 0 });
-    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / ' + PLATFORM_TOTALS_ORDER.length, delta: '', thr: '', prog: 0 });
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / ' + platformsForBrand(brand).length, delta: '', thr: '', prog: 0 });
   } else {
+    const brandPlatforms = platformsForBrand(brand);
     const weekRows = rowsForBrandWeek(brand, row.wk);
     const top = topPlatformsBy(weekRows, r => r.engagementTotal, 1)[0];
-    const loggedCount = new Set(weekRows.map(r => r.plat).filter(p => PLATFORM_TOTALS_ORDER.includes(p))).size;
+    const loggedCount = new Set(weekRows.map(r => r.plat).filter(p => brandPlatforms.includes(p))).size;
     const pct = Math.round(row.engagementTotal / KPI_TARGETS.engagement * 100);
     const pctColor = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
 
     fillStatCard(cards[0], { label: 'Total Engagement', value: row.engagementTotal.toLocaleString(), delta: (pct >= 100 ? '✓ ' : '') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: pct, progColor: pctColor });
     fillStatCard(cards[1], { label: 'Engagement Score', value: row.engScore + '/100', delta: 'Grade: ' + row.grade, deltaColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)', thr: row.engScore >= 80 ? '✓ Above 80 threshold' : 'Below 80 threshold', thrColor: row.engScore >= 80 ? 'var(--green)' : 'var(--red)', prog: row.engScore, progColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)' });
     fillStatCard(cards[2], { label: 'Top Platform', value: top ? top.plat : '—', delta: top ? top.val.toLocaleString() + ' engagement' : 'No platforms logged', deltaColor: 'var(--sub)', thr: row.wk, prog: top ? 100 : 0, progColor: top ? PLATFORM_COLORS[top.plat].hex : 'var(--sub2)', iconBg: top ? PLATFORM_COLORS[top.plat].bgVar : '', iconColor: top ? PLATFORM_COLORS[top.plat].textVar : '' });
-    const totalPlatformCount = PLATFORM_TOTALS_ORDER.length;
+    const totalPlatformCount = brandPlatforms.length;
     fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / ' + totalPlatformCount, delta: loggedCount >= totalPlatformCount ? '✓ All platforms logged' : (totalPlatformCount - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= totalPlatformCount ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / totalPlatformCount * 100), progColor: loggedCount >= totalPlatformCount ? 'var(--green)' : 'var(--amber)' });
   }
 
@@ -2232,8 +2277,10 @@ function openNewLogModal() {
   // this form anymore) — intentionally NOT touched here so opening a fresh
   // Log Week entry never clobbers notes someone's mid-typing elsewhere.
   ['lgWeekStart','lgWeekEnd','lgLeads'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  const platformEl = document.getElementById('lgPlatform');
-  if (platformEl) renderPlatformFieldInputs(platformEl.value);
+  // Rebuild the Platform list for whichever brand is currently selected
+  // (rather than trusting whatever options happen to be left over from a
+  // previous edit) so a brand's excluded platforms are never shown.
+  onLgBrandChange();
   openModal('logModal');
 }
 
@@ -2273,6 +2320,13 @@ function openEditLog(id) {
     brandEl.disabled = true;
   }
   if (platformEl) {
+    // Rebuild the option list for THIS row's brand first — a row being
+    // edited always belongs to a platform that was valid when it was
+    // logged, but the dropdown might currently be showing some other
+    // brand's list (or, for older rows logged before a platform became
+    // brand-excluded, the platform still needs to appear here so the entry
+    // can actually be edited/corrected).
+    populatePlatformOptions(row.brand, row.plat);
     platformEl.value = row.plat;
     platformEl.disabled = true;
     renderPlatformFieldInputs(row.plat);
