@@ -226,6 +226,15 @@ const PLATFORM_FIELDS = {
     { key: 'impressions', label: 'Impressions' },
     { key: 'subscribers', label: 'Subscribers' },
     { key: 'newSubs', label: 'New Subs' }
+  ],
+  'Webinar': [
+    { key: 'registrations', label: 'Registrations' },
+    { key: 'attendees', label: 'Attendees' }
+  ],
+  'Xspace': [
+    { key: 'listeners', label: 'Listeners' },
+    { key: 'speakers', label: 'Speakers/Co-hosts' },
+    { key: 'newFollowers', label: 'New Followers' }
   ]
 };
 
@@ -245,6 +254,14 @@ const FOLLOWER_FIELD_KEYS = {
   'TikTok':        { growth: ['newFollowers'],              excludeFromEngagement: ['followers', 'newFollowers'] },
   'Instagram':     { growth: ['newFollowers'],              excludeFromEngagement: ['followers', 'newFollowers', 'unfollows'] },
   'YouTube':       { growth: ['newSubs'],                   excludeFromEngagement: ['subscribers', 'newSubs'] },
+  // Webinar has no separate "new followers" field (just Registrations/
+  // Attendees, per what managers actually asked to log) — Attendees is the
+  // closest thing to an audience gained, so it doubles as the Follower
+  // Growth (10%) contributor while Registrations stays pure Engagement.
+  'Webinar':       { growth: ['attendees'],                 excludeFromEngagement: ['attendees'] },
+  // Xspace runs on X/Twitter and has its own explicit New Followers field,
+  // so it follows the same growth/exclude pattern as the 6 main platforms.
+  'Xspace':        { growth: ['newFollowers'],              excludeFromEngagement: ['newFollowers'] },
   'Google Search': { growth: [],                            excludeFromEngagement: [] },
   'Jiji':          { growth: [],                            excludeFromEngagement: [] }
 };
@@ -287,6 +304,13 @@ const PLATFORM_COLORS = {
   'TikTok':    { hex: '#db2777', bgVar: 'var(--pink-bg)',     textVar: 'var(--pink)' },
   'Instagram': { hex: '#d97706', bgVar: 'var(--amber-bg)',    textVar: 'var(--amber)' },
   'YouTube':   { hex: '#dc2626', bgVar: 'var(--red-bg)',      textVar: 'var(--red)' },
+  // Every existing CSS color variable (blue/teal/purple/pink/amber/red/
+  // indigo/green) is already claimed by another platform above, so Webinar
+  // and Xspace use their own literal hex pair instead of a var(--x) — same
+  // effect in the style="background:${bgVar}" usage, just without needing a
+  // new CSS custom property.
+  'Webinar':       { hex: '#0891b2', bgVar: '#cffafe', textVar: '#0891b2' },
+  'Xspace':        { hex: '#ea580c', bgVar: '#ffedd5', textVar: '#ea580c' },
   'Google Search': { hex: '#4285F4', bgVar: 'var(--indigo-bg)', textVar: 'var(--indigo)' },
   'Jiji':          { hex: '#16a34a', bgVar: 'var(--green-bg)',  textVar: 'var(--green)' }
 };
@@ -1228,7 +1252,11 @@ function renderPlatformTracker(){
   const container = document.getElementById('platformTracker');
   if (!container) return;
 
-  const ALL_PLATFORMS = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
+  // Reuses PLATFORM_TOTALS_ORDER (declared further down the file, but this
+  // function only ever runs after the whole script has parsed) instead of
+  // its own separate hardcoded list, so a new platform only needs adding in
+  // one place to show up here too.
+  const ALL_PLATFORMS = PLATFORM_TOTALS_ORDER;
   const groups = {};
   logData.forEach(r => {
     const key = r.brand + '||' + r.wk;
@@ -1307,8 +1335,17 @@ function renderPlatformTracker(){
 // broken down across the 6 platforms. Uses each platform's most recently
 // logged row (across all brands) so "Total Followers" reflects a current
 // snapshot rather than double-counting past weeks.
-const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube'];
+const PLATFORM_TOTALS_ORDER = ['Facebook','LinkedIn','Twitter','TikTok','Instagram','YouTube','Webinar','Xspace'];
 const PLATFORM_TOTALS_COLOR = '#0d9488';
+
+// Platform Weekly Targets (the "This Week's Target vs Actual" feature) is
+// deliberately scoped to only the platforms that actually have a static
+// weekly target set — Webinar and Xspace don't have one yet, so they stay
+// out of this list to avoid an undefined target breaking that table/chart's
+// math. They still fully participate everywhere else PLATFORM_TOTALS_ORDER
+// is used (Platform Totals, Trend Analysis, Engagement/Followers/Leads KPI
+// pages, Platform Log Tracker, Dashboard's main chart).
+const TARGET_TRACKED_PLATFORMS = PLATFORM_TOTALS_ORDER.filter(p => p !== 'Webinar' && p !== 'Xspace');
 
 // Google Search and Jiji aren't social platforms (no followers/impressions/
 // engagement of their own), so they deliberately stay OUT of
@@ -1625,7 +1662,7 @@ function renderPlatformTargetsCurrentTable() {
   const weekLabel = getWeekLabel();
   const prevWeekLabel = getPrevWeekLabel();
   const brandTargets = platformTargetsFor(brand);
-  const rows = PLATFORM_TOTALS_ORDER.map(p => {
+  const rows = TARGET_TRACKED_PLATFORMS.map(p => {
     const target = brandTargets[p];
     const row = platformActualsData.find(r => r.brand === brand && r.wk === weekLabel && r.plat === p);
     const actual = row ? row.actual : null;
@@ -1683,7 +1720,7 @@ function buildTargetAchievementSeries(maxWeeks = 4) {
   if (weekKeys.length > maxWeeks) weekKeys = weekKeys.slice(weekKeys.length - maxWeeks);
 
   const series = {};
-  PLATFORM_TOTALS_ORDER.forEach(p => { series[p] = weekKeys.map(() => null); });
+  TARGET_TRACKED_PLATFORMS.forEach(p => { series[p] = weekKeys.map(() => null); });
   rowsWithBucket.forEach(rb => {
     const wi = weekKeys.indexOf(rb.key);
     if (wi === -1 || !series[rb.row.plat]) return;
@@ -1700,7 +1737,7 @@ function buildTargetAchievementSeries(maxWeeks = 4) {
 function renderTargetAchievementChart(canvasId, storeKey, weekLabels, series) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
+  const platforms = TARGET_TRACKED_PLATFORMS.filter(p => series[p].some(v => v != null));
   const mode = chartViewMode[storeKey] || 'bar';
   const datasets = platforms.map(p => buildComparisonDataset(p, series[p], PLATFORM_COLORS[p].hex, mode));
   // The 100% Target reference stays a dashed line in both views — it's a
@@ -1736,7 +1773,7 @@ function renderTargetInsights(containerId, weekLabels, series) {
   if (!container) return;
   const n = weekLabels.length;
   const items = [];
-  PLATFORM_TOTALS_ORDER.forEach(p => {
+  TARGET_TRACKED_PLATFORMS.forEach(p => {
     const latest = series[p][n - 1];
     if (latest == null) return;
     items.push({ platform: p, pct: latest });
@@ -1762,7 +1799,7 @@ function renderTargetDetailTable(tableId, weekLabels, series, brand) {
   const table = document.getElementById(tableId);
   if (!table) return;
   const brandTargets = platformTargetsFor(brand);
-  const platforms = PLATFORM_TOTALS_ORDER.filter(p => series[p].some(v => v != null));
+  const platforms = TARGET_TRACKED_PLATFORMS.filter(p => series[p].some(v => v != null));
   if (!platforms.length) {
     table.innerHTML = `<tbody><tr><td style="padding:14px;color:var(--sub2);font-size:13px">No actuals logged yet.</td></tr></tbody>`;
     return;
@@ -1844,7 +1881,7 @@ function renderEngagementKPIPage() {
     fillStatCard(cards[0], { label: 'Total Engagement', value: '—', delta: 'No data logged yet', deltaColor: 'var(--sub2)', thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: 0 });
     fillStatCard(cards[1], { label: 'Engagement Score', value: '—', delta: '', thr: '', prog: 0 });
     fillStatCard(cards[2], { label: 'Top Platform', value: '—', delta: '', thr: '', prog: 0 });
-    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / 6', delta: '', thr: '', prog: 0 });
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: '0 / ' + PLATFORM_TOTALS_ORDER.length, delta: '', thr: '', prog: 0 });
   } else {
     const weekRows = rowsForBrandWeek(brand, row.wk);
     const top = topPlatformsBy(weekRows, r => r.engagementTotal, 1)[0];
@@ -1855,7 +1892,8 @@ function renderEngagementKPIPage() {
     fillStatCard(cards[0], { label: 'Total Engagement', value: row.engagementTotal.toLocaleString(), delta: (pct >= 100 ? '✓ ' : '') + pct + '% of target', deltaColor: pctColor, thr: 'Target: ' + KPI_TARGETS.engagement.toLocaleString(), prog: pct, progColor: pctColor });
     fillStatCard(cards[1], { label: 'Engagement Score', value: row.engScore + '/100', delta: 'Grade: ' + row.grade, deltaColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)', thr: row.engScore >= 80 ? '✓ Above 80 threshold' : 'Below 80 threshold', thrColor: row.engScore >= 80 ? 'var(--green)' : 'var(--red)', prog: row.engScore, progColor: row.engScore >= 80 ? 'var(--green)' : row.engScore >= 50 ? 'var(--amber)' : 'var(--red)' });
     fillStatCard(cards[2], { label: 'Top Platform', value: top ? top.plat : '—', delta: top ? top.val.toLocaleString() + ' engagement' : 'No platforms logged', deltaColor: 'var(--sub)', thr: row.wk, prog: top ? 100 : 0, progColor: top ? PLATFORM_COLORS[top.plat].hex : 'var(--sub2)', iconBg: top ? PLATFORM_COLORS[top.plat].bgVar : '', iconColor: top ? PLATFORM_COLORS[top.plat].textVar : '' });
-    fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / 6', delta: loggedCount >= 6 ? '✓ All platforms logged' : (6 - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / 6 * 100), progColor: loggedCount >= 6 ? 'var(--green)' : 'var(--amber)' });
+    const totalPlatformCount = PLATFORM_TOTALS_ORDER.length;
+    fillStatCard(cards[3], { label: 'Platforms Logged', value: loggedCount + ' / ' + totalPlatformCount, delta: loggedCount >= totalPlatformCount ? '✓ All platforms logged' : (totalPlatformCount - loggedCount) + ' platform(s) missing', deltaColor: loggedCount >= totalPlatformCount ? 'var(--green)' : 'var(--amber)', thr: row.wk, prog: Math.round(loggedCount / totalPlatformCount * 100), progColor: loggedCount >= totalPlatformCount ? 'var(--green)' : 'var(--amber)' });
   }
 
   const series = buildWeeklyPlatformSeries(r => r.engagementTotal || 0, 4, brandRows);
